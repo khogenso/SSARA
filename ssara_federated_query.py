@@ -45,6 +45,8 @@ import optparse
 import threading
 import Queue
 
+import password_config
+
 
 class MyParser(optparse.OptionParser):
     def format_epilog(self, formatter):
@@ -91,7 +93,7 @@ Usage Examples:
     querygroup.add_option('--lookDirection', action="store", dest="lookDirection", metavar='<ARG>', default='',help='Look Direction (L or R, default is both)')
     querygroup.add_option('--polarization', action="store", dest="polarization", metavar='<ARG>', default='',help='single or as a list')
     querygroup.add_option('--collectionName', action="store", dest="collectionName", metavar='<ARG>', default='',help='single collection or list of collections')  
-    querygroup.add_option('--processingLevel', action="store", dest="processingLevel", help='Processing Level of data: L0, L1, L1.0, SLC... ' )
+    querygroup.add_option('--processingLevel', action="store", dest="processingLevel", default='L0,L1.0', help='Processing Level of data: L0, L1, L1.0, SLC... ' )
     querygroup.add_option('--maxResults', action="store", dest="maxResults", type="int", metavar='<ARG>', help='maximum number of results to return (from each archive)')
     querygroup.add_option('--minBaselinePerp', action="store", dest="minBaselinePerp", metavar='<ARG>', help='min perpendicular baseline of granule')
     querygroup.add_option('--maxBaselinePerp', action="store", dest="maxBaselinePerp", metavar='<ARG>', help='max perpendicular baseline of granule')
@@ -109,14 +111,15 @@ Usage Examples:
     resultsgroup.add_option('--print', action="store_true", default=False, help='print results to screen')
     resultsgroup.add_option('--download', action="store_true", default=False, help='download the data')
     resultsgroup.add_option('--parallel', action="store", dest="parallel", type="int", default=1, metavar='<ARG>', help='number of scenes to download in parallel (default=%default)')
-    resultsgroup.add_option('--unavuser', action="store", dest="unavuser", type="str", metavar='<ARG>', help='UNAVCO SAR Archive username')
-    resultsgroup.add_option('--unavpass', action="store", dest="unavpass", type="str",metavar='<ARG>', help='UNAVCO SAR Archive password')
-    resultsgroup.add_option('--asfuser', action="store", dest="asfuser", type="str", metavar='<ARG>', help='ASF Archive username')
-    resultsgroup.add_option('--asfpass', action="store", dest="asfpass", type="str", metavar='<ARG>', help='ASF Archive password')
+#    resultsgroup.add_option('--unavuser', action="store", dest="unavuser", type="str", metavar='<ARG>', help='UNAVCO SAR Archive username')
+#    resultsgroup.add_option('--unavpass', action="store", dest="unavpass", type="str",metavar='<ARG>', help='UNAVCO SAR Archive password')
+#    resultsgroup.add_option('--asfuser', action="store", dest="asfuser", type="str", metavar='<ARG>', help='ASF Archive username')
+#    resultsgroup.add_option('--asfpass', action="store", dest="asfpass", type="str", metavar='<ARG>', help='ASF Archive password')
     resultsgroup.add_option('--ssuser', action="store", dest="ssuser", type="str", metavar='<ARG>', help='Supersites username')
     resultsgroup.add_option('--sspass', action="store", dest="sspass", type="str", metavar='<ARG>', help='Supersites password')
     resultsgroup.add_option('--monthMin', action="store", dest="monMin",type="int", default=1, metavar='<ARG>', help='minimum integer month')
     resultsgroup.add_option('--monthMax', action="store", dest="monMax",type="int", default=12, metavar='<ARG>', help='maximum integer month')
+    resultsgroup.add_option('--dem', action="store_true", default=False, help='OT call for DEM')
     parser.add_option_group(resultsgroup) 
     opts, remainder = parser.parse_args(argv)
     opt_dict= vars(opts)
@@ -167,6 +170,21 @@ Usage Examples:
                      and datetime.datetime.strptime(r['startTime'],"%Y-%m-%d %H:%M:%S").month <= opt_dict['monMax'] ]
     print "Scenes after filtering for monthMin %d and monthMax %d: %d" % (opt_dict['monMin'],opt_dict['monMax'],len(scenes))
 
+    if opt_dict['dem']:
+        lats = []
+        lons = []
+        for scene in scenes:
+            fp = re.findall(r"[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", scene['stringFootprint'])
+            for t in map(lambda i: float(fp[i]), filter(lambda i: i % 2 == 1, range(len(fp)))):
+                lats.append(t)
+            for t in map(lambda i: float(fp[i]), filter(lambda i: i % 2 == 0, range(len(fp)))):
+                lons.append(t)
+        north = max(lats)+0.15
+        south = min(lats)-0.15
+        east = max(lons)+0.15
+        west = min(lons)-0.15
+        print 'wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTM30"' % (north,south,east,west)
+
     if not opt_dict['kml'] and not opt_dict['download'] and not opt_dict['print']:
         print "You did not specify the --kml, --print, or --download option, so there really is nothing else I can do for you now"
     if opt_dict['print']:
@@ -197,12 +215,11 @@ Usage Examples:
         f.close() 
     ### DOWNLOAD THE DATA FROM THE QUERY RESULTS ### 
     if opt_dict['download']:
-        #a couple quick checks to make sure everything is in order
         allGood = True
         for collection in list(set([d['collectionName'] for d in scenes])):
-            if ('WInSAR' in collection or 'EarthScope' in collection) and not (opt_dict['unavuser'] and opt_dict['unavpass'] ):
+            if ('WInSAR' in collection or 'EarthScope' in collection) and not (password_config.unavuser and password_config.unavpass ):
                 print "Can't download collection: %s" % collection
-                print "You need to specify your UNAVCO username and password as options (--username=<ARG> and --password=<ARG>)"
+                print "You need to specify your UNAVCO username and password in password_config.py"
                 print "If you don't have a UNAVCO username/password, limit the query with the --collection option\n"
                 allGood = False
             if 'Supersites' in collection and not (opt_dict['ssuser']  and opt_dict['sspass']):
@@ -212,9 +229,9 @@ Usage Examples:
                 print "The SSO Downloader is need to download the data."
                 print "Get the downloader here: http://supersites.earthobservations.org/sso-downloader-0.1.tar.gz"
                 print "****************************************************************\n"
-            if 'ASF' in collection and not (opt_dict['asfuser'] and opt_dict['asfpass'] ):
+            if 'ASF' in collection and not (password_config.asfuser and password_config.asfpass ):
                 print "Can't download collection: %s" % collection
-                print "You need to specify your ASF username and password as options (--asfuser=<ARG> and --asfpass=<ARG>)"
+                print "You need to specify your ASF username and password in password_config.py"
                 print "If you don't have a ASF username/password, limit the query with the --collection option\n"
                 allGood = False
         if not allGood:
@@ -242,8 +259,8 @@ Usage Examples:
         
         
 def asf_dl(d, opt_dict):
-    user_name = opt_dict['asfuser']
-    user_password = opt_dict['asfpass']
+    user_name = password_config.asfuser
+    user_password = password_config.asfpass
     url = d['downloadUrl']
     filename = os.path.basename(url)
     o = urllib2.build_opener(urllib2.HTTPCookieProcessor() )
@@ -280,8 +297,8 @@ def asf_dl(d, opt_dict):
     f.close()
         
 def unavco_dl(d, opt_dict):
-    user_name = opt_dict['unavuser']
-    user_password = opt_dict['unavpass']
+    user_name = password_config.unavuser
+    user_password = password_config.unavpass
     url = d['downloadUrl']
     passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
     passman.add_password(None, 'http://facility.unavco.org/data/sar/', user_name, user_password)
