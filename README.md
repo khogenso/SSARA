@@ -1,9 +1,6 @@
-SSARA
-=====
+Seamless SAR Archive (SSARA) project 
+------
 
-Seamless SAR Archive project repository
+This repository contains software developed as part of the SSARA project, most notably will be a command line client used to perform federated queries with the API and utilities for data formatting and conversion.  Check out the Wiki for more information about specific elements of the project and you can create issues to let us now about any bugs or if you have a feature request.
 
-This repository will have files related to the SSARA project, most notably will 
-be a command line client used to perform federated queries with the API.
-
-
+For more information on the project and details about the API, see the WIKI (https://github.com/bakerunavco/SSARA/wiki)
