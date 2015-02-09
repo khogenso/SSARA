@@ -44,6 +44,7 @@ import re
 import optparse
 import threading
 import Queue
+import subprocess as sub
 
 import password_config
 
@@ -70,12 +71,17 @@ Usage Examples:
     ssara_federated_query.py --platform=ENVISAT,ERS-1,ERS-2 -r 170 -f 2925 --collectionName="WInSAR ESA,EarthScope ESA" --kml
     ssara_federated_query.py --platform=ENVISAT --intersectsWith=POLYGON((-118.3 33.7, -118.3 33.8, -118.0 33.8, -118.0 33.7, -118.3 33.7)) --kml
     
-  To download data, add the --download option and your user credentials (--unavuser=/--unavpass= for UNAVCO, --asfuser=/--asfpass= for ASF, and --ssuser=/--sspass= for Supersites)
-    ssara_federated_query.py --platform=ENVISAT -r 170 -f 2925 --download --unavuser=USERNAME --unavpass=PASSWORD
-    ssara_federated_query.py --platform=ENVISAT -r 170,392 -f 2925,657-693 -s 2003-01-01 -e 2008-01-01 --download --unavuser=USERNAME --unavpass=PASSWORD
-    ssara_federated_query.py --platform=ENVISAT,ERS-1,ERS-2 -r 170 -f 2925 --collection="WInSAR ESA,EarthScope ESA" --download --unavuser=USERNAME --unavpass=PASSWORD
+  To download data, add the --download option and add your user credentials to the password_config.py file
+    ssara_federated_query.py --platform=ENVISAT -r 170 -f 2925 --download 
+    ssara_federated_query.py --platform=ENVISAT -r 170,392 -f 2925,657-693 -s 2003-01-01 -e 2008-01-01 --download 
+    ssara_federated_query.py --platform=ENVISAT,ERS-1,ERS-2 -r 170 -f 2925 --collection="WInSAR ESA,EarthScope ESA" --download 
+
+  UAVSAR flight line is mapped to relative orbit in the API. Also the default for the command line client is L0/L1.0 so you will
+  need to use the "processingLevel" option, either set it to blank for everything or to something specific.  
+    ssara_federated_query.py --platform=UAVSAR --relativeOrbit=05901 --processingLevel='' --intersectsWith='POINT(-155.3 19.4)'
+    ssara_federated_query.py --platform=UAVSAR --relativeOrbit=05901 --processingLevel='INTERFEROMETRY' --intersectsWith='POINT(-155.3 19.4)'
 """
-    parser = MyParser(description=desc, epilog=epi, version='0.1rc1')
+    parser = MyParser(description=desc, epilog=epi, version='1.0')
     querygroup = optparse.OptionGroup(parser, "Query Parameters", "These options are used for the API query.  "  
                                       "Use options to limit what is returned by the search. These options act as a way "
                                       "to filter the results and narrow down the search results.")
@@ -115,8 +121,8 @@ Usage Examples:
 #    resultsgroup.add_option('--unavpass', action="store", dest="unavpass", type="str",metavar='<ARG>', help='UNAVCO SAR Archive password')
 #    resultsgroup.add_option('--asfuser', action="store", dest="asfuser", type="str", metavar='<ARG>', help='ASF Archive username')
 #    resultsgroup.add_option('--asfpass', action="store", dest="asfpass", type="str", metavar='<ARG>', help='ASF Archive password')
-    resultsgroup.add_option('--ssuser', action="store", dest="ssuser", type="str", metavar='<ARG>', help='Supersites username')
-    resultsgroup.add_option('--sspass', action="store", dest="sspass", type="str", metavar='<ARG>', help='Supersites password')
+#    resultsgroup.add_option('--ssuser', action="store", dest="ssuser", type="str", metavar='<ARG>', help='Supersites username')
+#    resultsgroup.add_option('--sspass', action="store", dest="sspass", type="str", metavar='<ARG>', help='Supersites password')
     resultsgroup.add_option('--monthMin', action="store", dest="monMin",type="int", default=1, metavar='<ARG>', help='minimum integer month')
     resultsgroup.add_option('--monthMax', action="store", dest="monMax",type="int", default=12, metavar='<ARG>', help='maximum integer month')
     resultsgroup.add_option('--dem', action="store_true", default=False, help='OT call for DEM')
@@ -153,7 +159,7 @@ Usage Examples:
 
     ### QUERY THE APIs AND GET THE JSON RESULTS ###
     params = urllib.urlencode(query_dict)
-    ssara_url = "http://www.unavco.org/ws/brokered/ssara/sar/search?%s" % params
+    ssara_url = "http://web-services.unavco.org/brokered/ssara/api/sar/search?%s" % params
     print "Running SSARA API Query"
     t = time.time()
     f = urllib2.urlopen(ssara_url)
@@ -161,6 +167,12 @@ Usage Examples:
     data = json.loads(json_data)
     scenes = data['resultList']
     print "SSARA API query: %f seconds" % (time.time()-t)
+
+    if data['message']:
+        print "###########################"
+        for d in data['message']:
+            print d
+        print "###########################"
 
     ### ORDER THE SCENES BY STARTTIME, NEWEST FIRST ###
     scenes = sorted(scenes, key=operator.itemgetter('startTime'), reverse=True)
@@ -203,7 +215,7 @@ Usage Examples:
 #                CSV.write(",".join(str(x) for x in [r['collectionName'], r['platform'], r['absoluteOrbit'], r['startTime'], r['stopTime'], r['relativeOrbit'], r['firstFrame'], r['finalFrame'], r['beamMode'], r['beamSwath'], r['flightDirection'], r['lookDirection'],r['polarization'], r['downloadUrl']])+"\n")
     ### GET A KML FILE, THE FEDERATED API HAS THIS OPTION ALREADY, SO MAKE THE SAME CALL AGAIN WITH output=kml OPTION ###
     if opt_dict['kml']:
-        ssara_url = "http://www.unavco.org/ws/brokered/ssara/sar/search?output=kml&%s" % params
+        ssara_url = "http://web-services.unavco.org/brokered/ssara/api/sar/search?output=kml&%s" % params
         print "Getting KML"
         t = time.time()
         req = urllib2.Request(ssara_url)
@@ -222,20 +234,21 @@ Usage Examples:
                 print "You need to specify your UNAVCO username and password in password_config.py"
                 print "If you don't have a UNAVCO username/password, limit the query with the --collection option\n"
                 allGood = False
-            if collection=='Supersites' and not (opt_dict['ssuser']  and opt_dict['sspass']):
+            if 'Supersites VA4' in collection and not (password_config.eossouser and password_config.eossopass ):
+                print "Can't download collection: %s" % collection
+                print "You need to specify your EO Single Sign On username and password in password_config.py"
                 print "\n****************************************************************"
-                print "For the Supersites data, you need an EO Single Sign On username/password:"
+                print "For the Supersites VA4 data, you need an EO Single Sign On username/password:"
                 print "Sign up for one here: https://eo-sso-idp.eo.esa.int/idp/AuthnEngine"
-                print "The SSO Downloader is need to download the data."
-                print "Get the downloader here: http://supersites.earthobservations.org/sso-downloader-0.1.tar.gz"
                 print "****************************************************************\n"
+                allGood = False
             if 'ASF' in collection and not (password_config.asfuser and password_config.asfpass ):
                 print "Can't download collection: %s" % collection
                 print "You need to specify your ASF username and password in password_config.py"
                 print "If you don't have a ASF username/password, limit the query with the --collection option\n"
                 allGood = False
         if not allGood:
-            print "Exiting now since some username/password are need for data download to continue"
+            print "Exiting now since some username/password are needed for data download to continue"
             exit()
         print "Downloading data now, %d at a time." % opt_dict['parallel']
         #create a queue for parallel downloading
@@ -247,16 +260,9 @@ Usage Examples:
             t.start()
         #populate queue with data   
         for d in sorted(scenes, key=operator.itemgetter('collectionName')):
-            if d['collectionName'] == 'Supersites':
-                if 'archive4' in d['downloadUrl']:
-                    print "ssod -d . -u $ARCHIVE4_USERNAME -p $ARCHIVE4_PASSWORD %s" % d['downloadUrl']
-                elif 'archive2' in d['downloadUrl']:
-                    print "wget --user=$SUPERSITES_USERNAME --password=$SUPERSITES_PASSWORD %s" % d['downloadUrl']
-            else:
-                queue.put([d, opt_dict])
+            queue.put([d, opt_dict])
         #wait on the queue until everything has been processed     
         queue.join()
-        
         
 def asf_dl(d, opt_dict):
     user_name = password_config.asfuser
@@ -301,7 +307,7 @@ def unavco_dl(d, opt_dict):
     user_password = password_config.unavpass
     url = d['downloadUrl']
     passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
-    passman.add_password(None, 'http://facility.unavco.org/data/sar/', user_name, user_password)
+    passman.add_password(None, 'http://www.unavco.org/data/imaging/sar/', user_name, user_password)
     authhandler = urllib2.HTTPDigestAuthHandler(passman)
     opener = urllib2.build_opener(authhandler)    
     filename = os.path.basename(url)
@@ -325,6 +331,21 @@ def unavco_dl(d, opt_dict):
     print "%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec)
     f.close()
     
+def va4_dl(d, opt_dict):
+    user_name = password_config.eossouser
+    user_password = password_config.eossopass
+    url = d['downloadUrl']
+    filename = os.path.basename(url)
+    secp_path = os.path.dirname(sys.argv[0])+"/data_utils/secp"
+    cmd = """%s -C %s:%s %s""" % (secp_path,user_name,user_password,d['downloadUrl'])
+    print "Downloading:",url
+    start = time.time()
+    pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.STDOUT).stdout
+    pipe.read()
+    total_time = time.time() - start
+    mb_sec = (os.path.getsize(filename) / (1024 * 1024.0)) / total_time
+    print "%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec)
+    
 class ThreadDownload(threading.Thread):
     """Threaded SAR data download"""
     def __init__(self, queue):
@@ -336,11 +357,10 @@ class ThreadDownload(threading.Thread):
             d, opt_dict = self.queue.get()
             if 'unavco' in d['downloadUrl']:
                 unavco_dl(d, opt_dict)
-            elif d['collectionName'] == 'Supersites': 
-                print "Supersite download not working directly form the client at this time"
-                print "Please run the ssod commands separately"
             elif 'asf' in d['downloadUrl'] :
                 asf_dl(d, opt_dict)
+            elif d['collectionName'] == 'Supersites VA4':
+                va4_dl(d,opt_dict)
             self.queue.task_done()
              
 if __name__ == '__main__':
