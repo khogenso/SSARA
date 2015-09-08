@@ -99,7 +99,7 @@ Usage Examples:
     querygroup.add_option('--lookDirection', action="store", dest="lookDirection", metavar='<ARG>', default='',help='Look Direction (L or R, default is both)')
     querygroup.add_option('--polarization', action="store", dest="polarization", metavar='<ARG>', default='',help='single or as a list')
     querygroup.add_option('--collectionName', action="store", dest="collectionName", metavar='<ARG>', default='',help='single collection or list of collections')  
-    querygroup.add_option('--processingLevel', action="store", dest="processingLevel", default='L0,L1.0', help='Processing Level of data: L0, L1, L1.0, SLC... ' )
+    querygroup.add_option('--processingLevel', action="store", dest="processingLevel", default='L0,L1.0,SLC', help='Processing Level of data: L0, L1, L1.0, SLC... ' )
     querygroup.add_option('--maxResults', action="store", dest="maxResults", type="int", metavar='<ARG>', help='maximum number of results to return (from each archive)')
     querygroup.add_option('--minBaselinePerp', action="store", dest="minBaselinePerp", metavar='<ARG>', help='min perpendicular baseline of granule')
     querygroup.add_option('--maxBaselinePerp', action="store", dest="maxBaselinePerp", metavar='<ARG>', help='max perpendicular baseline of granule')
@@ -285,7 +285,7 @@ def asf_dl(d, opt_dict):
         log = open('missing.txt','a')
         log.write(filename + '\n')
         log.close()
-        exit()
+        return
     dl_file_size = int(f.info()['Content-Length'])
     if os.path.exists(filename):
         file_size = os.path.getsize(filename)
