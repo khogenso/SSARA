@@ -199,7 +199,7 @@ Usage Examples:
         south = min(lats)-0.15
         east = max(lons)+0.15
         west = min(lons)-0.15
-        print 'wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTM30"' % (north,south,east,west)
+        print 'wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west)
 
     if not opt_dict['kml'] and not opt_dict['download'] and not opt_dict['print']:
         print "You did not specify the --kml, --print, or --download option, so there really is nothing else I can do for you now"
