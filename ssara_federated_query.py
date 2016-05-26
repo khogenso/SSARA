@@ -113,6 +113,7 @@ Usage Examples:
 
     resultsgroup = optparse.OptionGroup(parser, "Result Options", "These options handle the results returned by the API query")
     resultsgroup.add_option('--kml', action="store_true", default=False, help='create a KML of query') 
+    resultsgroup.add_option('--kmlName', action="store", dest="kml_filename", type="str", metavar='<ARG>', help='Filename for KML output')
     resultsgroup.add_option('--csv', action="store_true", default=False, help='create a CSV of query')
     resultsgroup.add_option('--print', action="store_true", default=False, help='print results to screen')
     resultsgroup.add_option('--download', action="store_true", default=False, help='download the data')
@@ -225,6 +226,8 @@ Usage Examples:
         req = urllib2.Request(ssara_url)
         r = urllib2.urlopen(req)
         localName = r.info()['Content-Disposition'].split('filename=')[1].replace('"','')
+        if opt_dict['kml_filename']:
+            localName = opt_dict['kml_filename']
         print "Saving KML: %s" % localName
         f = open(localName, 'wb')
         f.write(r.read())
