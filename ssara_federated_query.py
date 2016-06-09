@@ -201,6 +201,7 @@ Usage Examples:
         east = max(lons)+0.15
         west = min(lons)-0.15
         print 'wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west)
+#        print 'gdal_translate -of GMT -projwin %f %f %f %f /data/DEM/SRTMGL1/srtmgl1_wgs84.vrt dem.grd' % (west,north,east,south)
 
     if not opt_dict['kml'] and not opt_dict['download'] and not opt_dict['print']:
         print "You did not specify the --kml, --print, or --download option, so there really is nothing else I can do for you now"
@@ -276,38 +277,14 @@ def asf_dl(d, opt_dict):
     user_password = password_config.asfpass
     url = d['downloadUrl']
     filename = os.path.basename(url)
-    o = urllib2.build_opener(urllib2.HTTPCookieProcessor() )
-    urllib2.install_opener(o)
-    p = urllib.urlencode({'user_name':user_name,'user_password':user_password})
-    o.open("https://ursa.asfdaac.alaska.edu/cgi-bin/login",p)
-    try:
-        f = o.open(url)
-    except urllib2.HTTPError, e:
-        print 'Problem with:',url
-        print e
-        log = open('missing.txt','a')
-        log.write(filename + '\n')
-        log.close()
-        return
-    dl_file_size = int(f.info()['Content-Length'])
-    if os.path.exists(filename):
-        file_size = os.path.getsize(filename)
-        if dl_file_size == file_size:
-            print "%s already downloaded" % filename
-            f.close()
-            return
     print "ASF Download:",filename
     start = time.time()
-    CHUNK = 256 * 10240
-    with open(filename, 'wb') as fp:
-        while True:
-            chunk = f.read(CHUNK)
-            if not chunk: break
-            fp.write(chunk)
+    cmd = 'wget -c --http-user='+user_name+' --http-password='+user_password+' '+url
+    pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.PIPE)
+    stdout, stderr = pipe.communicate()
     total_time = time.time()-start
     mb_sec = (os.path.getsize(filename)/(1024*1024.0))/total_time
     print "%s download time: %.2f secs (%.2f MB/sec)" %(filename,total_time,mb_sec)
-    f.close()
         
 def unavco_dl(d, opt_dict):
     user_name = password_config.unavuser
