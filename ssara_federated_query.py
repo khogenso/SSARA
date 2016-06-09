@@ -69,7 +69,7 @@ Usage Examples:
     ssara_federated_query.py --platform=ENVISAT -r 170 -f 2925 --kml
     ssara_federated_query.py --platform=ENVISAT -r 170,392 -f 2925,657-693 -s 2003-01-01 -e 2008-01-01 --kml
     ssara_federated_query.py --platform=ENVISAT,ERS-1,ERS-2 -r 170 -f 2925 --collectionName="WInSAR ESA,EarthScope ESA" --kml
-    ssara_federated_query.py --platform=ENVISAT --intersectsWith=POLYGON((-118.3 33.7, -118.3 33.8, -118.0 33.8, -118.0 33.7, -118.3 33.7)) --kml
+    ssara_federated_query.py --platform=ENVISAT --intersectsWith='POLYGON((-118.3 33.7, -118.3 33.8, -118.0 33.8, -118.0 33.7, -118.3 33.7))' --kml
     
   To download data, add the --download option and add your user credentials to the password_config.py file
     ssara_federated_query.py --platform=ENVISAT -r 170 -f 2925 --download 
@@ -113,6 +113,7 @@ Usage Examples:
 
     resultsgroup = optparse.OptionGroup(parser, "Result Options", "These options handle the results returned by the API query")
     resultsgroup.add_option('--kml', action="store_true", default=False, help='create a KML of query') 
+    resultsgroup.add_option('--kmlName', action="store", dest="kml_filename", type="str", metavar='<ARG>', help='Filename for KML output')
     resultsgroup.add_option('--csv', action="store_true", default=False, help='create a CSV of query')
     resultsgroup.add_option('--print', action="store_true", default=False, help='print results to screen')
     resultsgroup.add_option('--download', action="store_true", default=False, help='download the data')
@@ -225,6 +226,8 @@ Usage Examples:
         req = urllib2.Request(ssara_url)
         r = urllib2.urlopen(req)
         localName = r.info()['Content-Disposition'].split('filename=')[1].replace('"','')
+        if opt_dict['kml_filename']:
+            localName = opt_dict['kml_filename']
         print "Saving KML: %s" % localName
         f = open(localName, 'wb')
         f.write(r.read())
