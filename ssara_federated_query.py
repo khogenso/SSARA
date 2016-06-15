@@ -279,7 +279,7 @@ def asf_dl(d, opt_dict):
     filename = os.path.basename(url)
     print "ASF Download:",filename
     start = time.time()
-    cmd = 'wget -c --http-user='+user_name+' --http-password='+user_password+' '+url
+    cmd = 'wget --no-check-certificate -c --http-user='+user_name+' --http-password='+user_password+' '+url
     pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.PIPE)
     stdout, stderr = pipe.communicate()
     total_time = time.time()-start
