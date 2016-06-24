@@ -275,16 +275,39 @@ Usage Examples:
 def asf_dl(d, opt_dict):
     user_name = password_config.asfuser
     user_password = password_config.asfpass
+    cookie_handler = urllib2.HTTPCookieProcessor()
+    pm = urllib2.HTTPPasswordMgrWithDefaultRealm()
+    pm.add_password(None, 'urs.earthdata.nasa.gov', user_name, user_password)
+    auth_handler = urllib2.HTTPBasicAuthHandler(pm)
+    opener = urllib2.build_opener(cookie_handler, auth_handler)
+    urllib2.install_opener(opener)
     url = d['downloadUrl']
     filename = os.path.basename(url)
     print "ASF Download:",filename
     start = time.time()
-    cmd = 'wget --no-check-certificate -c --http-user='+user_name+' --http-password='+user_password+' '+url
-    pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.PIPE)
-    stdout, stderr = pipe.communicate()
-    total_time = time.time()-start
-    mb_sec = (os.path.getsize(filename)/(1024*1024.0))/total_time
-    print "%s download time: %.2f secs (%.2f MB/sec)" %(filename,total_time,mb_sec)
+    try:
+        f = urllib2.urlopen(url)
+    except urllib2.HTTPError, e:
+        print e
+        return
+    dl_file_size = int(f.info()['Content-Length'])
+    if os.path.exists(filename):
+        file_size = os.path.getsize(filename)
+        if dl_file_size == file_size:
+            print "%s already downloaded" % filename
+            f.close()
+            return
+    start = time.time()
+    CHUNK = 256 * 10240
+    with open(filename, 'wb') as fp:
+        while True:
+            chunk = f.read(CHUNK)
+            if not chunk: break
+            fp.write(chunk)
+    total_time = time.time() - start
+    mb_sec = (os.path.getsize(filename) / (1024 * 1024.0)) / total_time
+    print "%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec)
+    f.close()
         
 def unavco_dl(d, opt_dict):
     user_name = password_config.unavuser
