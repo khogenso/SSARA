@@ -28,11 +28,9 @@
 #  FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 #  DEALINGS IN THE SOFTWARE.
 ###############################################################################
-
+from __future__ import print_function
 import os
 import sys
-import urllib
-import urllib2
 import json
 import datetime
 import time
@@ -43,11 +41,20 @@ import operator
 import re
 import optparse
 import threading
-import Queue
 import subprocess as sub
+try:
+    # For Python 3.0 and later
+    from urllib.request import urlopen,HTTPCookieProcessor,HTTPPasswordMgrWithDefaultRealm,HTTPBasicAuthHandler,HTTPDigestAuthHandler,build_opener,install_opener
+    from urllib.parse import urlencode
+    from urllib.error import HTTPError
+    from queue import Queue
+except ImportError:
+    # Fall back to Python2
+    from urllib2 import urlopen,HTTPCookieProcessor,HTTPPasswordMgrWithDefaultRealm,HTTPBasicAuthHandler,HTTPDigestAuthHandler,build_opener,install_opener,HTTPError
+    from urllib import urlencode
+    from Queue import Queue
 
 import password_config
-
 
 class MyParser(optparse.OptionParser):
     def format_epilog(self, formatter):
@@ -160,32 +167,32 @@ Usage Examples:
 
 
     ### QUERY THE APIs AND GET THE JSON RESULTS ###
-    params = urllib.urlencode(query_dict)
+    params = urlencode(query_dict)
     ssara_url = "http://web-services.unavco.org/brokered/ssara/api/sar/search?%s" % params
-    print "Running SSARA API Query"
+    print("Running SSARA API Query")
     t = time.time()
-    f = urllib2.urlopen(ssara_url)
-    json_data = f.read()
+    f = urlopen(ssara_url)
+    json_data = f.read().decode('utf8')
     data = json.loads(json_data)
     scenes = data['resultList']
-    print "SSARA API query: %f seconds" % (time.time()-t)
+    print("SSARA API query: %f seconds" % (time.time()-t))
 
     if data['message']:
-        print "###########################"
+        print("###########################")
         for d in data['message']:
-            print d
-        print "###########################"
+            print(d)
+        print("###########################")
 
     ### ORDER THE SCENES BY STARTTIME, NEWEST FIRST ###
     scenes = sorted(scenes, key=operator.itemgetter('startTime'), reverse=True)
-    print "Found %d scenes" % len(scenes)
+    print("Found %d scenes" % len(scenes))
     scenes = [r for r in sorted(scenes, key=operator.itemgetter('startTime')) 
                      if datetime.datetime.strptime(r['startTime'],"%Y-%m-%d %H:%M:%S").month >= opt_dict['monMin'] 
                      and datetime.datetime.strptime(r['startTime'],"%Y-%m-%d %H:%M:%S").month <= opt_dict['monMax'] ]
-    print "Scenes after filtering for monthMin %d and monthMax %d: %d" % (opt_dict['monMin'],opt_dict['monMax'],len(scenes))
+    print("Scenes after filtering for monthMin %d and monthMax %d: %d" % (opt_dict['monMin'],opt_dict['monMax'],len(scenes)))
     if opt_dict['noswath']:
         scenes = [ r for r in sorted(scenes) if r['firstFrame']==r['finalFrame'] ]
-        print "Scenes after filtering out swaths: %d" % len(scenes)
+        print("Scenes after filtering out swaths: %d" % len(scenes))
 
     if opt_dict['dem']:
         lats = []
@@ -200,14 +207,14 @@ Usage Examples:
         south = min(lats)-0.15
         east = max(lons)+0.15
         west = min(lons)-0.15
-        print 'wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west)
-#        print 'gdal_translate -of GMT -projwin %f %f %f %f /data/DEM/SRTMGL1/srtmgl1_wgs84.vrt dem.grd' % (west,north,east,south)
+        print('wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west))
+        print('gdal_translate -of GMT -projwin %f %f %f %f /data/DEM/SRTMGL1/srtmgl1_wgs84.vrt dem.grd' % (west,north,east,south))
 
     if not opt_dict['kml'] and not opt_dict['download'] and not opt_dict['print']:
-        print "You did not specify the --kml, --print, or --download option, so there really is nothing else I can do for you now"
+        print("You did not specify the --kml, --print, or --download option, so there really is nothing else I can do for you now")
     if opt_dict['print']:
         for r in sorted(scenes, key=operator.itemgetter('startTime')):
-            print ",".join(str(x) for x in [r['collectionName'], r['platform'], r['absoluteOrbit'], r['startTime'], r['stopTime'], r['relativeOrbit'], r['firstFrame'], r['finalFrame'], r['beamMode'], r['beamSwath'], r['flightDirection'], r['lookDirection'],r['polarization'], r['downloadUrl']])
+            print(",".join(str(x) for x in [r['collectionName'], r['platform'], r['absoluteOrbit'], r['startTime'], r['stopTime'], r['relativeOrbit'], r['firstFrame'], r['finalFrame'], r['beamMode'], r['beamSwath'], r['flightDirection'], r['lookDirection'],r['polarization'], r['downloadUrl']]))
     ### MAKE THE CSV FILE ###
     if opt_dict['csv']:
         with open('ssara_federated_search_'+datetime.datetime.now().strftime("%Y%m%d%H%M%S")+".csv",'w') as CSV:
@@ -222,14 +229,13 @@ Usage Examples:
     ### GET A KML FILE, THE FEDERATED API HAS THIS OPTION ALREADY, SO MAKE THE SAME CALL AGAIN WITH output=kml OPTION ###
     if opt_dict['kml']:
         ssara_url = "http://web-services.unavco.org/brokered/ssara/api/sar/search?output=kml&%s" % params
-        print "Getting KML"
+        print("Getting KML")
         t = time.time()
-        req = urllib2.Request(ssara_url)
-        r = urllib2.urlopen(req)
+        r = urlopen(ssara_url)
         localName = r.info()['Content-Disposition'].split('filename=')[1].replace('"','')
         if opt_dict['kml_filename']:
             localName = opt_dict['kml_filename']
-        print "Saving KML: %s" % localName
+        print("Saving KML: %s" % localName)
         f = open(localName, 'wb')
         f.write(r.read())
         f.close() 
@@ -238,29 +244,29 @@ Usage Examples:
         allGood = True
         for collection in list(set([d['collectionName'] for d in scenes])):
             if ('WInSAR' in collection or 'EarthScope' in collection) and not (password_config.unavuser and password_config.unavpass ):
-                print "Can't download collection: %s" % collection
-                print "You need to specify your UNAVCO username and password in password_config.py"
-                print "If you don't have a UNAVCO username/password, limit the query with the --collection option\n"
+                print("Can't download collection: %s" % collection)
+                print("You need to specify your UNAVCO username and password in password_config.py")
+                print("If you don't have a UNAVCO username/password, limit the query with the --collection option\n")
                 allGood = False
             if 'Supersites VA4' in collection and not (password_config.eossouser and password_config.eossopass ):
-                print "Can't download collection: %s" % collection
-                print "You need to specify your EO Single Sign On username and password in password_config.py"
-                print "\n****************************************************************"
-                print "For the Supersites VA4 data, you need an EO Single Sign On username/password:"
-                print "Sign up for one here: https://eo-sso-idp.eo.esa.int/idp/AuthnEngine"
-                print "****************************************************************\n"
+                print("Can't download collection: %s" % collection)
+                print("You need to specify your EO Single Sign On username and password in password_config.py")
+                print("\n****************************************************************")
+                print("For the Supersites VA4 data, you need an EO Single Sign On username/password:")
+                print("Sign up for one here: https://eo-sso-idp.eo.esa.int/idp/AuthnEngine")
+                print("****************************************************************\n")
                 allGood = False
             if 'ASF' in collection and not (password_config.asfuser and password_config.asfpass ):
-                print "Can't download collection: %s" % collection
-                print "You need to specify your ASF username and password in password_config.py"
-                print "If you don't have a ASF username/password, limit the query with the --collection option\n"
+                print("Can't download collection: %s" % collection)
+                print("You need to specify your ASF username and password in password_config.py")
+                print("If you don't have a ASF username/password, limit the query with the --collection option\n")
                 allGood = False
         if not allGood:
-            print "Exiting now since some username/password are needed for data download to continue"
+            print("Exiting now since some username/password are needed for data download to continue")
             exit()
-        print "Downloading data now, %d at a time." % opt_dict['parallel']
+        print("Downloading data now, %d at a time." % opt_dict['parallel'])
         #create a queue for parallel downloading
-        queue = Queue.Queue()
+        queue = Queue()
         #spawn a pool of threads, and pass them queue instance 
         for i in range(opt_dict['parallel']):
             t = ThreadDownload(queue)
@@ -275,26 +281,26 @@ Usage Examples:
 def asf_dl(d, opt_dict):
     user_name = password_config.asfuser
     user_password = password_config.asfpass
-    cookie_handler = urllib2.HTTPCookieProcessor()
-    pm = urllib2.HTTPPasswordMgrWithDefaultRealm()
+    cookie_handler = HTTPCookieProcessor()
+    pm = HTTPPasswordMgrWithDefaultRealm()
     pm.add_password(None, 'urs.earthdata.nasa.gov', user_name, user_password)
-    auth_handler = urllib2.HTTPBasicAuthHandler(pm)
-    opener = urllib2.build_opener(cookie_handler, auth_handler)
-    urllib2.install_opener(opener)
+    auth_handler = HTTPBasicAuthHandler(pm)
+    opener = build_opener(cookie_handler, auth_handler)
+    install_opener(opener)
     url = d['downloadUrl']
     filename = os.path.basename(url)
-    print "ASF Download:",filename
+    print("ASF Download:",filename)
     start = time.time()
     try:
-        f = urllib2.urlopen(url)
-    except urllib2.HTTPError, e:
-        print e
+        f = urlopen(url)
+    except HTTPError as e:
+        print(e)
         return
     dl_file_size = int(f.info()['Content-Length'])
     if os.path.exists(filename):
         file_size = os.path.getsize(filename)
         if dl_file_size == file_size:
-            print "%s already downloaded" % filename
+            print("%s already downloaded" % filename)
             f.close()
             return
     start = time.time()
@@ -306,28 +312,28 @@ def asf_dl(d, opt_dict):
             fp.write(chunk)
     total_time = time.time() - start
     mb_sec = (os.path.getsize(filename) / (1024 * 1024.0)) / total_time
-    print "%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec)
+    print("%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec))
     f.close()
         
 def unavco_dl(d, opt_dict):
     user_name = password_config.unavuser
     user_password = password_config.unavpass
     url = d['downloadUrl']
-    passman = urllib2.HTTPPasswordMgrWithDefaultRealm()
+    passman = HTTPPasswordMgrWithDefaultRealm()
     passman.add_password(None, 'http://www.unavco.org/data/imaging/sar/', user_name, user_password)
-    authhandler = urllib2.HTTPDigestAuthHandler(passman)
-    opener = urllib2.build_opener(authhandler)    
+    authhandler = HTTPDigestAuthHandler(passman)
+    opener = build_opener(authhandler)    
     filename = os.path.basename(url)
     try:
         f = opener.open(url)
-    except urllib2.HTTPError, e:
-        print e
+    except HTTPError as e:
+        print(e)
         return
     dl_file_size = int(f.info()['Content-Length'])
     if os.path.exists(filename):
         file_size = os.path.getsize(filename)
         if dl_file_size == file_size:
-            print "%s already downloaded" % filename
+            print("%s already downloaded" % filename)
             f.close()
             return
     start = time.time()
@@ -339,7 +345,7 @@ def unavco_dl(d, opt_dict):
             fp.write(chunk)
     total_time = time.time() - start
     mb_sec = (os.path.getsize(filename) / (1024 * 1024.0)) / total_time
-    print "%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec)
+    print("%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec))
     f.close()
     
 def va4_dl(d, opt_dict):
@@ -349,13 +355,13 @@ def va4_dl(d, opt_dict):
     filename = os.path.basename(url)
     secp_path = os.path.dirname(sys.argv[0])+"/data_utils/secp"
     cmd = """%s -C %s:%s %s""" % (secp_path,user_name,user_password,d['downloadUrl'])
-    print "Downloading:",url
+    print("Downloading:",url)
     start = time.time()
     pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.STDOUT).stdout
     pipe.read()
     total_time = time.time() - start
     mb_sec = (os.path.getsize(filename) / (1024 * 1024.0)) / total_time
-    print "%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec)
+    print("%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec))
     
 class ThreadDownload(threading.Thread):
     """Threaded SAR data download"""
