@@ -208,7 +208,7 @@ Usage Examples:
         east = max(lons)+0.15
         west = min(lons)-0.15
         print('wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west))
-        print('gdal_translate -of GMT -projwin %f %f %f %f /data/DEM/SRTMGL1/srtmgl1_wgs84.vrt dem.grd' % (west,north,east,south))
+        print('gdal_translate -of GMT -projwin %f %f %f %f /vsicurl/https://cloud.sdsc.edu/v1/AUTH_opentopography/Raster/SRTM_GL1_Ellip/SRTM_GL1_Ellip_srtm.vrt dem.grd' % (west,north,east,south))
 
     if not opt_dict['kml'] and not opt_dict['download'] and not opt_dict['print']:
         print("You did not specify the --kml, --print, or --download option, so there really is nothing else I can do for you now")
@@ -320,7 +320,7 @@ def unavco_dl(d, opt_dict):
     user_password = password_config.unavpass
     url = d['downloadUrl']
     passman = HTTPPasswordMgrWithDefaultRealm()
-    passman.add_password(None, 'http://www.unavco.org/data/imaging/sar/', user_name, user_password)
+    passman.add_password(None, 'https://imaging.unavco.org/data/sar/lts', user_name, user_password)
     authhandler = HTTPDigestAuthHandler(passman)
     opener = build_opener(authhandler)    
     filename = os.path.basename(url)
