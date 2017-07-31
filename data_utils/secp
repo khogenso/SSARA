@@ -1,43 +1,42 @@
-#!/usr/bin/env bash
+#!/bin/bash
 # Project: secp
-# Outline: secp is a generic utility to perform URL downloads to a sink directory.
-#          the supported url schemes are ftp, scp, http, https, gridftp, file and nfs
-#          when available in compressed form or packaged in an archive, the files/directories
-#          are automatically decompressed/unpackaged to the sink name.
-#          the following archive formats are recognised:
-#          .gz, .tgz, .zip
+# Outline:
+#   secp is a generic utility to perform bulk downloads to a sink directory.
+#   Its features are:
+#     * Parallel downloads (optionally with multiple credentials)
+#     * Support for ftp, scp, http, https, gridftp, hadoopfs, file and nfs.
+#     * Support for basic, ESA's EO-SSO and EO Data Gateway authentication
+#     * Credentials and session manager
+#     * Automatic unpackaging of files
+#     * Support for file lists in metalink, ATOM (@rel=enclosure), RDF, HTML
+#       (meta-refresh and href-tags), UAR (url textual file lists)
 #
-#          as default, the software will follow:
-#            * .uar text files containing a list of URLs (one per line) to download.
-#            * HTML meta-refresh and href tags to interactively download files from the web.
-#            * RDF online resources (<dclite4g:onlineResource> tag)
-#
-# Dependencies: curl, scp, gawk, sed, bash, globus-url-copy [optional]
-#
-# Change log:
+# Dependencies: curl, scp, gawk, sed, bash, sha256sum, file, globus-url-copy [optional]
+# 
+# Changelog:
 # version 1.0
 #       * first release
 # version 1.1
-#	* add the -f option to force a local copy of the file in case of nfs driver
-#	* add the handling of the new return message of gridftp server "No such file or directory"
+#       * add the -f option to force a local copy of the file in case of nfs driver
+#       * add the handling of the new return message of gridftp server "No such file or directory"
 # version 1.2
 #       * corrected mkdir with -p flag when creating output directory
 # version 1.3
 #       * changed the -R flag semantic for the opposite to retry on timeout by default
 #
 # version 2.0 2008-05-17
-#	* added support for scp and for http, https and ftp via wget
-#	* improved error handling in particular for nfs and gridftp drivers
-#	* improved message logging to stderr
-#	* use of logApp function to log messages if available, unless LOG_FUNCTION variable is defined
-#	* add -q (quiet) option to suppress echo of local filenames to stdout
-#	* add -O option to force file or directory overrides in output directory (default is to not override)
-#	* add -w (work directory) option to specify working directory (defaulting to /tmp)
-#	* add watchdog for secp hangs in particular for gridftp or wget transfers (-t and -R options)
-#	* add unpacking support for .tar, .tgz, .tar.gz, .Z, tar.Z, .bz, .bz2, .tbz, .tar.bz, .tar.bz2, .zip
-#	* add support for uar (url archive) type unpacking
-#	* add -c -p and -b options 
-#	* add -z option
+#       * added support for scp and for http, https and ftp via wget
+#       * improved error handling in particular for nfs and gridftp drivers
+#       * improved message logging to stderr
+#       * use of logApp function to log messages if available, unless LOG_FUNCTION variable is defined
+#       * add -q (quiet) option to suppress echo of local filenames to stdout
+#       * add -O option to force file or directory overrides in output directory (default is to not override)
+#       * add -w (work directory) option to specify working directory (defaulting to /tmp)
+#       * add watchdog for secp hangs in particular for gridftp or wget transfers (-t and -R options)
+#       * add unpacking support for .tar, .tgz, .tar.gz, .Z, tar.Z, .bz, .bz2, .tbz, .tar.bz, .tar.bz2, .zip
+#       * add support for uar (url archive) type unpacking
+#       * add -c -p and -b options 
+#       * add -z option
 # version 2.1 2008-07-16 by manu
 #       * removed -fast option
 # version 2.2
@@ -91,6 +90,28 @@
 #       * added -F for URL load from file list
 # version 3.1.2
 #       * fixed unzip folder detection plus other minor fixes
+# version 3.1.3
+#       * fixed EO-SSO support for test servers
+#       * fixed minor bugs
+# version 3.2.0
+#       * added support for ATOM and Metalink file listing local and remote decoding
+#       * file lists (-F) can be now accessed from remote addresses
+#       * added parallel download support (-P) with optional multiple credentials (-PC)
+#       * http driver now recognizes correctly 401 error and ask for credentials if not supplied 
+#       * fixed multiple bugs in handling of abnormal termination, loading of credentails, etc...
+#       * added -J flag to support remote file name resolution by the driver, this is enabled automatically
+#         if the URI does not contain a file name. The http driver is the only one to support this feature for now
+#       * added support for EO Data Gateway authentication
+#       * added support for X509 certificate and proxy credentials (-X flag)
+#       * added support for XML Retry-After tags follow-up
+#       * fixed HTML follow-up to better support HREF
+#       * extended -x to file lists
+# version 3.2.1
+#       * fix due to EO-SSO update
+# version 3.2.2
+#       * added compatibility with dos filelists
+#       * fix bug on handling remote file lists (uses now the file command to determine the type of remote file)
+#       * added functionality to access files with HTTP POST
 #
 # License:
 #  This program is free software: you can redistribute it and/or modify
@@ -106,64 +127,82 @@
 #  You should have received a copy of the GNU General Public License
 #  along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #
-SECP_VERSION=3.1.2
+SECP_VERSION=3.2.2
 
 # Usage:
 function usage {
 cat <<:usage
 secp version $SECP_VERSION
 Usage:
-secp  [-h] [-a] [-q] [-f] [-b <url-base>] [-d <driver-def>] 
-      [-o|O <sink-dir>] [-w <work-dir>] [-c] [-p <prefix>] [-z|-Z]
-      [-r <num-retries>] [-t <timeout>] [-R] [-l <log-label>] [-D]
-      <url1> [<url2> ... <urlN>]
+secp  [options] <url1> [<url2> ... <urlN>]
 
 URL Parameters:
-      Arguments are URL strings provided by seurl
-      if a parameter is specified as '-', URLs are read and inserted from standard input
+      Arguments are URL strings provided. If a parameter is specified as '-', URLs are read
+      from standard input
  
 Options:
       -h               displays this help page
       -a               abort on first error without attempting to process further URLs
       -q               quiet mode, local filenames are not echoed to stdout after transfer
       -f               force transfer of a physical copy of the file in case of nfs URLs
-      -F <url-list>    get URLs from the <url-list> file
+      -F <url-list>    get URLs from a file. It can be a <url-list> file, a metalink file or an
+                       ATOM file.
       -d <driver-file> get additional drivers from shell file <driver-file>. Drivers shall contain
                        a named <protocol>Driver
       -o|O <out-dir>   defines the output directory for transfers (default is $PWD)
                        with -O the sink files or directories possibly existing in the output
                        directory will be overwritten.
-      -c               creates the output directory if it does not exist
+      -s               skip download if sink path already exists
+      -J               enable remote file name generation. If enabled, the driver will create the
+                       output file name, which may be different from the one specified in the URL
+      -c|-co <out-dir> creates the output directory if it does not exist. (you can use -co to
+                       specify directly the output dir)
       -p <prefix>      prepend the given prefix to all output names
-      -z               provide output as a compressed package (.gz for files or .tgz for folders). NOTE
-                       that it will not compress already compressed files (.gz, .tgz or .zip)
+      -z               provide output as a compressed package (.gz for files or .tgz for folders).
+                       NOTE: that it will not compress already compressed files (.gz, .tgz or .zip)
       -U|--no-uzip     disable file automatic decompression of .gz, .tgz and .zip files.
       -r <num-retries> defines the maximum number of retries (default is 5)
       -rt <seconds>    define the time (in seconds) between retries (default is 60)
       -t <timeout>     defines the timer (in seconds) for the watchdog timeout applicable to
                        gridftp, scp, ftp, http, and https schemes (default is 600 seconds)
       -R               do not retry transfer after timeout
-      -D               set debug mode for command output parsing debugging
-      -H               do not follow html and rdf tags and .uar archives.
-      -s               skip download if sink path already exists
+      -H               do not follow file lists URLs. NOTE: By deafult, if a URL points to a metalink,
+                       uar, html and rdf, these are decoded and all the linked data is downloaded.
       -w <tmpdir>      set up temporary directory for drivers (default to /tmp)
-      -x <pattern>     exclude the files matching the pattern for directory input
+      -x <pattern>     exclude the files matching the pattern for directory input or file lists
       -K               private mode, disable storing of authentication session in ~/.secp_sess file
                        and passwords in the ~/.secp_cred file.
       -C <user>:<pass> force <user> and <pass> authentication (NOTE: these passwords will be stored
-                       in clear text in the ~/.secp_cred file. NOTE: If username/passowrd is specified
-                       it has precedence over the certificate/proxy authentication)
+                       in clear text in the ~/.secp_cred file. Use the -K flag if you want to avoid
+                       this behaviour. NOTE: If username/passowrd is specified it has precedence over
+                       the certificate/proxy authentication)
+      -X <crt>[:<key>] force usage of X509 authentication. If <key> is supplied, <crt> and <key> are
+                       respectively the private and public proxy certificates. If <key> is not supplied,
+                       <crt> is an X509 proxy certificate. (NOTE: the <crt> and <key> will be stored
+                       in the ~/.secp_cred file. Use the -K flag if you want to avoid this behaviour.)
+      -P <num-worker>  enable parallel download with the <num-worker> number of workers. If download
+                       requires username/password, you need to specify it within the command line,
+                       include it into the ~/.secp_cred file or use the -PC option.
+      -PC <cred-file>  enable parallel download with multiple different credentials. One worker will be
+                       spawn for each line of the credential file. The credential file shall contain
+                       username/password couples in <user>:<pass> format.
 
-Output:
-      unless the quiet option is used (-q), the local path of each file (or directory) 
-      downloaded after each URL transfer is echoed, one per line
-      unless the -U option is used, if the output file is a .gz or .tgz file it will be
-      decompressed
-      unless the -H options is specified, the software will follow the RDF <dclite4g:onlineResource>
-      and the HTML href and refresh tags.
-      the software will perform authentication if credentials are specified. Supported authentication
-      types are 'basic', EO-SSO and session cookies. Credentials are stored in the ~/.secp_cred file,
-      session cookies are stored in the ~/.secp_sess file (use -K switch to disable this behaviour)
+Notes:
+ *  Unless the quiet option is used (-q), the local path of each file (or directory) downloaded after each
+    URL transfer is echoed, one per line
+ *  Unless the -U option is used, if the output file is a .gz or .tgz file it will be decompressed
+ *  Unless the -H options is specified, the software will follow Metalink, ATOM, RDF, HTML (href) and uar
+    pages. the software will also follow HTTP meta-refresh and XML Retry-After tags
+ *  The software will perform authentication if credentials are specified. Supported authentication types
+    are 'basic', X509, EO-SSO and EO Data gateway. Credentials are stored in the ~/.secp_cred file, session
+    cookies are stored in the ~/.secp_sess file (use -K switch to disable this behaviour)
+ *  If the url is an HTTP url, everyhting after the special '|' caracter will be sent via an HTTP POST
+
+Advanced usage examples:
+  * Download the last 5 products from SciHub (with two parallel downloads)
+     ./secp -J -co outdir -P 2 -F 'https://scihub.copernicus.eu/dhus/search?q=*&rows=5&start=0'
+  * Download the SMOS L2 products from 2016-09-01 to 2016-09-30
+     ./secp -U -F 'https://smos-diss.eo.esa.int/socat/NRT_Open/search|service=SimpleOnlineCatalogue&version=1.0&request=search&format=text%2Fplain&pageCount=50&query.beginAcquisition.start=2016-09-01&query.beginAcquisition.stop=2016-09-30&query.productType=MIR_SMNRT2'
 
 Exit codes:
       0      all URLs were successfully downloaded
@@ -199,6 +238,7 @@ _OUTPUT_PREFIX=
 _CREATE_OUTPUT_DIR=false
 _OUTPUT_DIR="$PWD"
 _INPUT_URI=
+_INPUT_URI_FILES=
 _UNCOMPRESS=true
 _FOLLOW_HTML=true
 _OVERWRITE=false
@@ -209,6 +249,9 @@ _USER_USERNAME=
 _USER_PASSWORD=
 _AUTH_DATA_FILE="$HOME/.secp_cred"
 _SESSION_FILE="$HOME/.secp_sess"
+_PARALLEL_DOWNLOAD=0
+_PARALLEL_DOWNLOAD_CREDS=
+_REMOTE_FILENAME=false
 
 #Parse arguments
 while [[ "$#" -gt 0 ]]; do
@@ -217,7 +260,7 @@ while [[ "$#" -gt 0 ]]; do
    -s) _SKIP_EXISTING_SINKS=true; shift 1 ;;
    -q) _QUIET=true; shift 1 ;;
    -f) _COPY=true; shift 1 ;;
-   -F) [[ -e "$2" ]] && _INPUT_URI="$_INPUT_URI `tr '\n' ' '<$2`"; shift 2 ;;
+   -F) _INPUT_URI_FILES="$_INPUT_URI_FILES $2"; shift 2 ;;
    -D) echo "[WARNING] -D option is deprecated. Launch this script with sh -x to have debug information." 1>&2; set +x; shift 1 ;;
    -R) _RETRY=0; shift 1 ;;
    -r) _RETRY="$2"; shift 2 ;;
@@ -233,17 +276,21 @@ while [[ "$#" -gt 0 ]]; do
    -U | --no-uzip) _UNCOMPRESS=false; shift 1 ;;
    -o) _OVERWRITE=false; _OUTPUT_DIR="$2"; shift 2 ;;
    -O) _OVERWRITE=true; _OUTPUT_DIR="$2"; shift 2 ;;
+   -J) _REMOTE_FILENAME=true; shift 1;;
    -H) _FOLLOW_HTML=false; shift 1 ;;
    -x) _DIR_EXCLUDE_PATTERN="$2"; shift 2 ;;
    -w) _TMP_DIR="$2"; shift 2 ;;
    -h | --help) usage ;;
    -K) _SESSION_FILE=/dev/null; _AUTH_DATA_FILE=; shift 1 ;;
    -C) _USER_USERNAME="${2%%:*}"; _USER_PASSWORD="${2#*:}"; shift 2 ;;
+   -X) p="${2%%:*}"; p2="${2#*:}"; if [[ $p == $p2 ]]; then X509_USER_PROXY="$p"; else X509_USER_CERT="$p"; X509_USER_KEY="$p2"; fi; p=;p2=; shift 2;;
+   -P) _PARALLEL_DOWNLOAD=$2; shift 2 ;;
+   -PC) _PARALLEL_DOWNLOAD_CREDS=$2; _PARALLEL_DOWNLOAD=`wc -l <$2`; shift 2 ;;
    *) if [[ "$1" == "-" ]]; then
         _INPUT_URI="$_INPUT_URI `tr '\n' ' '`"
       elif [[ "${1:0:1}" == "-" ]]; then
-	echo "[ERROR  ][secp] Unnknown option: $1" 1>&2
-	exit 255
+        echo "[ERROR  ][secp] Unnknown option: $1" 1>&2
+        exit 255
       else
         _INPUT_URI="$_INPUT_URI $1"
       fi
@@ -252,12 +299,13 @@ while [[ "$#" -gt 0 ]]; do
   esac
 done
 _INPUT_URI="${_INPUT_URI# } "
+_INPUT_URI_FILES="${_INPUT_URI_FILES# } "
 
 #Trap the abort message (kill all the childs of this executable if you abort)
 function killchild {
-  for process in `ps -Af | gawk -vPID="$1" '{if ($3 == PID) printf "$2 ";}'`; do
+  for process in `ps -Af | gawk -vPID="$1" '{if ($3 == PID) printf $2" ";}'`; do
     killchild $process
-    kill -9 $process
+    kill -9 $process &>/dev/null
   done
 }
 
@@ -266,7 +314,7 @@ function terminate {
         killchild $$
         echo "[ERROR  ][secp] aborted!" 1>&2
 }
-trap 'terminate; exit 255' HUP TERM
+trap 'terminate; exit 255' HUP TERM INT
 
 #Check output path
 [[ "${_OUTPUT_DIR:0:1}" != "/" ]] && _OUTPUT_DIR="$PWD/$_OUTPUT_DIR"
@@ -289,24 +337,25 @@ _OUTPUT_DIR="${_OUTPUT_DIR%/}/"
 #  <mandatory>, if true, defines the password as mandatory, so it will be asked
 #  to the user if it is not present in the storage
 function loadpass {
-  CRED_INDEX="$1"
-  _SERVER_USERNAME=
-  _SERVER_PASSWORD=
+  if [[ $CRED_INDEX != "$1" ]]; then
+    CRED_INDEX="$1"
+    _SERVER_USERNAME=
+    _SERVER_PASSWORD=
+  fi
 
-  #Check if credentials exists (if so, load them)
-  if [[ -n "$_AUTH_DATA_FILE" && -e $_AUTH_DATA_FILE ]]; then
-    if [[ -n "$_USER_USERNAME" && -n "$_USER_PASSWORD" ]]; then
-      #Save credentials in the data file
-      _SERVER_USERNAME="$_USER_USERNAME"
-      _SERVER_PASSWORD="$_USER_PASSWORD"
-      CRED_INDEX="${URI#*://}"; CRED_INDEX=${CRED_INDEX%%/*}
-      sed -i "\|^$CRED_INDEX=.*|d" $_AUTH_DATA_FILE
+  if [[ -n "$_USER_USERNAME" && -n "$_USER_PASSWORD" ]]; then
+    #If credentials are specified by the user, use them
+    _SERVER_USERNAME="$_USER_USERNAME"
+    _SERVER_PASSWORD="$_USER_PASSWORD"
+    if [ -n "$_AUTH_DATA_FILE" ]; then
+      [ -e $_AUTH_DATA_FILE ] && sed -i "\|^$CRED_INDEX=.*|d" $_AUTH_DATA_FILE
       echo "$CRED_INDEX=$_SERVER_USERNAME:$_SERVER_PASSWORD" >> $_AUTH_DATA_FILE
-    else
-      CREDS="`sed -n "s|^$CRED_INDEX"'=\(.*\)$|\1|p' $_AUTH_DATA_FILE`"
-      _SERVER_USERNAME="${CREDS%%:*}"
-      _SERVER_PASSWORD="${CREDS#*:}"
     fi
+  elif [[ -n "$_AUTH_DATA_FILE" && -e $_AUTH_DATA_FILE ]]; then
+    #Try to load credentials from the disk
+    CREDS="`sed -n "s|^$CRED_INDEX"'=\(.*\)$|\1|p' $_AUTH_DATA_FILE`"
+    _SERVER_USERNAME="${CREDS%%:*}"
+    _SERVER_PASSWORD="${CREDS#*:}"
   fi
 
   if [[ -z "$_SERVER_USERNAME" && -z "$_SERVER_PASSWORD" && "$2" == "true" && "$_QUIET" == "false" ]]; then
@@ -317,13 +366,67 @@ function loadpass {
     read -s _SERVER_PASSWORD
     echo -n "[INTER  ][secp] Do you want to store your password? [y/n] (NOTE: username/password will be stored in clear text): " 1>&2
     read -n 1 YESNO
-    echo ""
+    echo "" 1>&2
     if [[ $YESNO == "y" ]]; then
       echo "$CRED_INDEX=$_SERVER_USERNAME:$_SERVER_PASSWORD" >> $_AUTH_DATA_FILE
     fi
   fi
 }
 
+#parseurllist function parses url lists
+#Usage:
+# parseurllist <originaluri> <localfile>
+#  where <originaluri> is the original URL where the file list has been downloaded,
+#  <localfile> is the current location of the downloaded file list
+#  and the function returns the global URI_TO_FOLLOW variable with decoded products list
+function parseurllist {
+
+  #Get parameters
+  local URI="$1"
+  local _LOCAL_FILE="$2"
+
+  #check file format by file URI name/path and the first 5 characters
+  local FB="`head -c 5 $_LOCAL_FILE`"
+  URI_TO_FOLLOW=
+  if [[ "$FB" == "<?xml" ]]; then
+    #It seems to be an XML. Let's try to understand what is it from the closure tag
+    if grep -q '</dseo:ProductDownloadResponse>' $_LOCAL_FILE && grep -q '<' $_LOCAL_FILE; then
+      URI_TO_FOLLOW=`sed -n 's|.*<dseo:RetryAfter>\([0-9 ]*\)</dseo:RetryAfter>.*|refresh://\1|p' < $_LOCAL_FILE`
+    elif grep -q '</ProductDownloadResponse>' $_LOCAL_FILE && grep -q '<' $_LOCAL_FILE; then
+      URI_TO_FOLLOW=`sed -n 's|.*<RetryAfter>\([0-9 ]*\)</RetryAfter>.*|refresh://\1|p' < $_LOCAL_FILE`
+    elif grep -q '</metalink>' $_LOCAL_FILE; then
+      URI_TO_FOLLOW=`tr -d '\n' < $_LOCAL_FILE | gawk 'BEGIN{RS=">";p=0;t=0}{ if ($1 == "<file") t=1; if(t==1) { if($1=="/file>") t=0; if($1=="<url"){getline;gsub("<.*$","",$1);e[p]=$1;p++;t=0;}}}END{ for (i=0;i<p;i++) printf e[i]" "; exit p;}'`
+    elif grep -q '</rdf:RDF>' $_LOCAL_FILE; then
+      URI_TO_FOLLOW=`tr -d '\n' < $_LOCAL_FILE | gawk 'BEGIN{RS=">";p=0}{ if ($1 ~ "<ws:[A-Z]*") { split($2,a,"\""); if (a[1] ~ "^rdf:about") { b=a[2]; sub(/^.*\//,"",b); sub(/\?.*$/,"",b); if (d[b]==0) { d[b]=1; e[p]=a[2]; p++; } } } }END{ for (i=0;i<p;i++) printf e[i]" "; exit p;}'`
+    elif grep -q '</feed>' $_LOCAL_FILE; then
+      URI_TO_FOLLOW=`tr -d '\n' < $_LOCAL_FILE | gawk 'BEGIN{RS=">";p=0;t=0}{ if ($1 == "<entry") t=1; if(t==1) { if($1=="/entry>") t=0; if($1=="<link"){ if(($0 !~ " rel=\"" && $0 ~ " href=\"")||($0 ~ " rel=\"" && $0 ~ " rel=\"enclosure\"")){ e[p]=gensub(/.* href="([^"]*)".*/,"\\\\1","g"); p++; t=0; }}}}END{ for (i=0;i<p;i++) printf e[i]" "; exit p;}'`
+    fi
+  elif [[ "$FB" == "<!DOC" || "$FB" == "<!doc"  || "$FB" == "<html" || "$FB" == "<HTML"  ]]; then
+    #It seems to be an HTML. Try to extract the RDF tags (and do not duplicate the entries)
+    local urib="${URI#*://}"; urib=${urib%/*}; local urir="${URI%%://*}://$urib/"; urib="${URI%%://*}://${urib%%/*}"
+    URI_TO_FOLLOW=`tr -d '\n' < $_LOCAL_FILE | gawk -v ub="$urib" -v ur="$urir" -v u="$URI" 'BEGIN{RS=">";p=0}{ if ($1" "$2 == "<meta http-equiv=\"refresh\"") { split($3,a,"\""); e[0]="refresh://"a[2]; p=1; exit; } ; if ($1 == "<a") { split($2,a,"\""); if (a[1] == "href=") { g=a[2]; if (g!~/^[a-zA-Z0-9]*:\/\//){if(g~/^\//){g=ub""g;}else{g=ur""g}}; if(g!=u){b=a[2]; sub(/^.*\//,"",b); sub(/\?.*$/,"",b); if (d[b]==0) { d[b]=1; e[p]=g; p++; } } } } }END{ for (i=0;i<p;i++) printf e[i]" "; exit p;}'`
+  elif [[ "${URI##*.}" == "uar" || "$FB" == "https" || "$FB" == "http:" || "$FB" == "ftp:/" || "$FB" == "cache" || "$FB" == "gridf" || "$FB" == "s3://" || "$FB" == "nfs:/" || "$FB" == "file:" ]] && [[ "`file -b --mime-type $_LOCAL_FILE`" == "text/plain" ]]; then
+    #If it is a .uar or a text file
+    URI_TO_FOLLOW="`tr '\n' ' ' < $_LOCAL_FILE | tr -d '\r'`"
+  fi
+  if [[ -n "$_DIR_EXCLUDE_PATTERN" ]]; then
+    #exclude patterns in the file list which we do not want to download
+    URI_TO_FOLLOW="`tr ' ' '\n' <<<$URI_TO_FOLLOW | egrep -v "$_DIR_EXCLUDE_PATTERN" | tr '\n' ' '`"
+  fi
+  if [[ "$URI_TO_FOLLOW" =~ ^refresh:// ]]; then
+    #this is a meta-refresh
+    URI_TO_FOLLOW=${URI_TO_FOLLOW#refresh://}
+    local ST=${URI_TO_FOLLOW%%;*}
+    if [[ "$ST" == "$URI_TO_FOLLOW" ]]; then
+      URI_TO_FOLLOW="$URI "
+    else
+      URI_TO_FOLLOW="${URI_TO_FOLLOW#*;}"
+      URI_TO_FOLLOW="${URI_TO_FOLLOW# }"
+    fi
+    echo "[INFO   ][secp][refresh] got meta-refresh, waiting for $ST seconds" 1>&2
+    sleep $ST
+  fi
+}
 
 ##DEFINE DRIVERS
 ###############################################################################
@@ -338,10 +441,14 @@ function loadpass {
 #  _CONNECTION_TIMEOUT  connection timeout
 #  _COPY                if true, the driver should copy the file. If false, the
 #                       driver can make a symbolic link to the original file
+#  _REMOTE_FILENAME     if true, the driver can ignore the <output-file> and
+#                       generate a new file name in the same folder as <output-file>
+#                       The new file name shall be set in the _LOCAL_FILE variable
 #
 # output status conventions:
 # 0       : operation successfull
 # 1       : file does not exist, may try to fecth the gzipped version
+# 2       : authentication error, may try with different credentials
 # < 128   : error during operation but worth retry
 # >= 128  : fatal error during operation, code will be translated as (256 - code)
 # 128     : a timeout occured
@@ -387,10 +494,10 @@ function hdfsDriver ()
 
   hadoop dfs -lsr $INPUT_URI | while read perm inode user group size date time path; do
     [ "$perm" == "Found" ] && continue
-    [ -n "$_DIR_EXCLUDE_PATTERN" ] && [ -n "`echo $path | egrep $_DIR_EXCLUDE_PATTERN`" ] && continue
+    [ -n "$_DIR_EXCLUDE_PATTERN" ] && [ -n "`egrep $_DIR_EXCLUDE_PATTERN <<<$path`" ] && continue
     localpath=${path#$INPUT_URI}
     [ -n "$localpath" ] && mkdir -p $2
-    if [ "`echo $perm | cut -c1`" == "d" ]; then
+    if [ "`cut -c1<<<$perm`" == "d" ]; then
       mkdir -p ${2}${localpath}
     else
       if $_COPY; then
@@ -492,31 +599,67 @@ function cacheDriver()
 
 #Generic driver for curl, works for http, ftp and any other URL supported cURL
 function curlDriver {
-  curlopt="-b $_SESSION_FILE -c $_SESSION_FILE -L -f --connect-timeout $_CONNECTION_TIMEOUT --retry $_RETRY --retry-delay $_RETRY_SLEEP"
+  local url="$1"
+  outfile="$2"
+  curlopt="-s -S -b $_SESSION_FILE -c $_SESSION_FILE -L -f --connect-timeout $_CONNECTION_TIMEOUT --retry $_RETRY --retry-delay $_RETRY_SLEEP"
   if [[ -n "$_SERVER_PASSWORD" && -n "$_SERVER_USERNAME" ]]; then
     curlopt="$curlopt -k --user $_SERVER_USERNAME:$_SERVER_PASSWORD"
   elif [[ -n "$X509_USER_PROXY" ]]; then
     curlopt="$curlopt --cert $X509_USER_PROXY --key $X509_USER_PROXY --cacert $X509_USER_PROXY"
     [[ -z "$X509_CERT_DIR" ]] && X509_CERT_DIR=/etc/grid-security/certificates/
     [[ -d "$X509_CERT_DIR" ]] && curlopt="$curlopt --capath $X509_CERT_DIR"
+  elif [[ -n "$X509_USER_CERT" && -n "$X509_USER_KEY" ]]; then
+    curlopt="$curlopt --cert $X509_USER_CERT --key $X509_USER_KEY"
+    [[ -z "$X509_CERT_DIR" ]] && X509_CERT_DIR=/etc/grid-security/certificates/
+    [[ -d "$X509_CERT_DIR" ]] && curlopt="$curlopt --capath $X509_CERT_DIR"
   else
     curlopt="$curlopt -k"
   fi
+  if [[ "$_REMOTE_FILENAME" == "true" ]]; then
+    #use a temporary file for download and then remove it, also get the header for resolving the file name
+    outfile="${2%/*}/tmpcurldown$RANDOM$RANDOM$RANDOM"
+    curlopt="$curlopt -D -"
+  fi
+  if [[ "${url#*|}" != "$url" ]]; then
+    #perform a POST if you have a | in the url
+    curlopt="$curlopt --data ${url#*|}"
+    url="${url%%|*}"
+  fi
 
   #Try to download the file
-  message="`curl $curlopt -o "$2" "$1" 2>&1`"
+  message="`curl $curlopt -o "$outfile" "$url" 2>&1`"
   res=$?
   if [[ "$res" -ne "0" ]]; then
-    if [[ "${message/The requested URL returned error: 403//}" != "$message" ]]; then
-      echo "[ERROR  ][secp] Forbidden. Please check your proxy certificate or your username/password." 1>&2
-      res=2
+    if [[ "${message/The requested URL returned error: 403//}" != "$message" || "${message/The requested URL returned error: 401//}" != "$message" ]]; then
+      if [[ -n "$_SERVER_PASSWORD" && -n "$_SERVER_USERNAME" ]]; then
+        #Cre3dentials are supplied but they are wrong, this is a fatal error
+        echo "[ERROR  ][secp] Forbidden. Please check your proxy certificate or your username/password." 1>&2
+        res=130
+      else
+        echo "[ERROR  ][secp] This URL requires proxy certificate or username/password." 1>&2
+        res=2
+      fi
     elif [[ "${message/The requested URL returned error: 404//}" != "$message" ]]; then
       res=1
     else
-      echo "[ERROR  ][secp][failed] url '$URI' - $message" 1>&2
+      echo "[ERROR  ][secp][failed] url '$url' - $message" 1>&2
     fi
-    rm -f "$2"
+    rm -f "$outfile"
     return $res
+  fi
+
+  #Rename the file with the new file name if there is a Content-Disposition header
+  if [[ "$_REMOTE_FILENAME" == "true" ]]; then
+    #use a temporary file for download and then remove it, also get the header for resolving the file name
+    newfname="`gawk '{if($1="Content-Disposition:"){r=gensub(/.*filename="([^"]*)".*/,"\\\\1","g");if(r!=$0)print r;}}' <<<$message`"
+    if [[ -z "$newfname" ]]; then
+      #no content disposition, use default file name
+      mv $outfile $2
+    else
+      #new file name
+      _LOCAL_FILE="${2%/*}/$newfname"
+      mv $outfile $_LOCAL_FILE
+    fi
   fi
 
   return 0
@@ -536,6 +679,128 @@ function gsiftpDriver { gridftpDriver $@; }
 
 ##END DRIVERS DEFINITION
 
+#Parse command-line provided input URI file lists
+while [[ -n "$_INPUT_URI_FILES" ]]; do
+  URI="${_INPUT_URI_FILES%% *}"
+  _INPUT_URI_FILES="${_INPUT_URI_FILES#* }"
+  [[ -z "$URI" ]] && continue
+
+  if [[ "$URI" =~ [a-zA-Z0-9]*:\/\/ ]]; then
+    #File list is remote filelist
+    echo "[INFO   ][secp] accessing remote file list from '$URI'" 1>&2
+    localdir="$_TMP_DIR/tmpflist$RANDOM$RANDOM$RANDOM"
+    mkdir -p $localdir
+    _LOCAL_FILE=`$0 -H $URI -o $localdir`
+    res=$?
+    if [ $res -ne 0 ]; then
+      echo "[ERROR  ][secp][error] failed to access '$URI'" 1>&2
+      continue
+    fi
+    parseurllist "$URI" $_LOCAL_FILE
+    rm -rf $localdir
+  else
+    #file list is local
+    parseurllist "file://$URI" "$URI"
+  fi
+  if [[ -n "$URI_TO_FOLLOW" && "$URI_TO_FOLLOW" != " " ]]; then
+    echo "[INFO   ][secp][success] got URIs from '$URI'" 1>&2
+    _INPUT_URI="$URI_TO_FOLLOW$_INPUT_URI"
+  fi
+done
+if [[ -z "$_INPUT_URI" || "$_INPUT_URI" == " " ]]; then
+  echo "[INFO   ][secp][success] No URIs to download" 1>&2
+  exit 0;
+fi
+
+#Parallelize the download by calling several time this script
+if [[ $_PARALLEL_DOWNLOAD -gt 1 ]]; then
+  #If there is more than one file in the list, then you need to parallelize
+  if [[ "${_INPUT_URI% }" != "${_INPUT_URI%% *}" ]]; then
+
+    #Generate new worker command line
+    newwcmd="-r $_RETRY -t $_CONNECTION_TIMEOUT -rt $_RETRY_SLEEP"
+    $_ABORT_ON_URI_ERROR && newwcmd="$newwcmd -a"
+    $_SKIP_EXISTING_SINKS && newwcmd="$newwcmd -s"
+    $_QUIET && newwcmd="$newwcmd -q"
+    $_COPY && newwcmd="$newwcmd -f"
+    $_COMPRESS_OUTPUT && newwcmd="$newwcmd -z"
+    [[ -n "$_OUTPUT_PREFIX" ]] && newwcmd="$newwcmd -p $_OUTPUT_PREFIX"
+    $_CREATE_OUTPUT_DIR && newwcmd="$newwcmd -c"
+    $_UNCOMPRESS || newwcmd="$newwcmd -U"
+    $_OVERWRITE && newwcmd="$newwcmd -O $_OUTPUT_DIR" || newwcmd="$newwcmd -o $_OUTPUT_DIR"
+    $_REMOTE_FILENAME && newwcmd="$newwcmd -J"
+    $_FOLLOW_HTML || newwcmd="$newwcmd -H"
+    [[ -n "$_DIR_EXCLUDE_PATTERN" ]] && newwcmd="$newwcmd -x $_DIR_EXCLUDE_PATTERN"
+    [[ -n "$_TMP_DIR" ]] && newwcmd="$newwcmd -w $_TMP_DIR"
+    [[ $_SESSION_FILE == '/dev/null' ]] && newwcmd="$newwcmd -K"
+    if [[ -n "$_USER_USERNAME" ]]; then
+      if [[ -z "$_PARALLEL_DOWNLOAD_CREDS" ]]; then
+        newwcmd="$newwcmd -C $_USER_USERNAME:$_USER_PASSWORD"
+      else
+        echo "[WARNING][secp] credentials will be taken from the parallel credentials file. Command line provided credentials will be ignore.'" 1>&2
+      fi
+    fi
+    newcred=""
+
+    #Create workers control structure
+    for i in `seq 1 $_PARALLEL_DOWNLOAD`; do
+      wk[$i]='stopped'
+    done
+    while [[ -n "$_INPUT_URI" ]]; do
+      URI="${_INPUT_URI%% *}"
+      _INPUT_URI="${_INPUT_URI#* }"
+      [[ -z "$URI" ]] && continue
+
+      #Check for a free download slot
+      while [ ${wk[$i]} != 'stopped' ]; do
+        for i in `seq 1 $_PARALLEL_DOWNLOAD`; do
+          if [ ${wk[$i]} == 'stopped' ]; then
+            break;
+          fi
+          if ! ps -p ${wk[$i]} > /dev/null; then
+            echo "[INFO   ][secp] worker #$i stopped'" 1>&2
+            wk[$i]='stopped'
+            break;
+          fi
+        done
+        if [ ${wk[$i]} != 'stopped' ]; then sleep 5; fi
+      done
+
+      #Spawn new worker
+      echo "[INFO   ][secp] spawing worker #$i for url '$URI' > local '$_OUTPUT_DIR$_OUTPUT_PREFIX'" 1>&2
+      if [[ -z "$_PARALLEL_DOWNLOAD_CREDS" ]]; then 
+        $0 $newwcmd "$URI" &
+        wk[$i]=$!
+      else
+        newcred=`sed "${i}q;d" < $_PARALLEL_DOWNLOAD_CREDS`
+        $0 $newwcmd -C $newcred -K "$URI" &
+        wk[$i]=$!
+      fi
+    done
+
+    #Wait for all the workers to complete
+    echo "[INFO   ][secp] input URL list terminated. Waiting current worker to complete.'" 1>&2
+    allstopped=0
+    while [ $allstopped == 0 ]; do
+      allstopped=1
+      for i in `seq 1 $_PARALLEL_DOWNLOAD`; do
+        if [ ${wk[$i]} != 'stopped' ]; then
+          if ps -p ${wk[$i]} > /dev/null; then
+            allstopped=0
+          else
+            wk[$i]='stopped'
+            echo "[INFO   ][secp] worker $i stopped'" 1>&2
+          fi
+        fi
+      done
+      sleep 5;
+    done
+    echo "[INFO   ][secp] Download completed.'" 1>&2
+
+    exit 0;
+  fi
+fi
+
 #Download the files one by one
 exit_code=0
 if $_ABORT_ON_URI_ERROR; then
@@ -551,7 +816,13 @@ while [[ -n "$_INPUT_URI" ]]; do
   echo "[INFO   ][secp][starting] url '$URI' > local '$_OUTPUT_DIR$_OUTPUT_PREFIX'" 1>&2
 
   #Search if local file already exists (if so, overwrite or exit)
-  _LOCAL_FILE="${URI##*/}"; _LOCAL_FILE="${_LOCAL_FILE%\?*}"; _LOCAL_FILE="$_OUTPUT_DIR$_OUTPUT_PREFIX$_LOCAL_FILE"
+  _LOCAL_FILE="${URI##*/}"; _LOCAL_FILE="${_LOCAL_FILE%\?*}";
+  if [[ -z "$_LOCAL_FILE" ]]; then
+    echo "[WARNING][secp][get:file] URI does not seem to provide a file name. Remote file name will be enabled." 1>&2
+    _LOCAL_FILE="download$RANDOM$RANDOM"
+    _REMOTE_FILENAME=true
+  fi
+  _LOCAL_FILE="$_OUTPUT_DIR$_OUTPUT_PREFIX$_LOCAL_FILE"
   if [[ -e "$_LOCAL_FILE" ]]; then
     if $_OVERWRITE; then
       echo "[WARNING][secp][get:file] clearing existing sink '$_LOCAL_FILE'" 1>&2
@@ -576,6 +847,14 @@ while [[ -n "$_INPUT_URI" ]]; do
   #Drivers shall satisfy the options in the comments above
   [[ "$URI" =~ [a-zA-Z0-9]*:\/\/ ]] || URI="file://$URI"
   URI_DRIVER="${URI%%://*}Driver"
+  
+  #Check if driver exists
+  if [[ "`type -t $URI_DRIVER`" != "function" ]]; then
+	echo "[ERROR  ][secp][failed] protocol ${URI%%://*}:// not supported" 1>&2
+	rm -f $_LOCAL_FILE
+	res=1
+	eval "$ON_ERROR"    
+  fi
 
   #Call the driver
   $URI_DRIVER $URI $_LOCAL_FILE
@@ -590,66 +869,101 @@ while [[ -n "$_INPUT_URI" ]]; do
       res=251
       eval "$ON_ERROR"
     fi
+  elif [[ "$res" -eq "2" ]]; then
+    #Credentials are not supplied. Try to see if you can force the user to supply them
+    CRED_INDEX="${URI#*://}"; CRED_INDEX=${CRED_INDEX%%/*}
+    loadpass $CRED_INDEX true
+    if [[ -n "$_SERVER_PASSWORD" && -n "$_SERVER_USERNAME" ]]; then
+      _INPUT_URI="${URI} $_INPUT_URI"
+      continue
+    else
+      echo "[ERROR  ][secp][failed] url '$URI' not authorized" 1>&2
+      res=252
+      eval "$ON_ERROR"
+    fi
   fi
   [[ "$res" -ne "0" ]] && eval "$ON_ERROR"
 
-  # Follow HTML (perform also HTML authentication)
-  if $_FOLLOW_HTML; then
-    if [[ ! -d "$_LOCAL_FILE" && ! -h "$_LOCAL_FILE" && "$(stat -c%s "$_LOCAL_FILE")" -lt 10240 ]]; then
-      URI_TO_FOLLOW=
-      #check file format by file URI name/path and the first 5 characters
-      FB="`head -c 5 $_LOCAL_FILE`"
-      if [[ "${URI##*.}" == "uar" ]]; then
-        #This is an UAR archive
-        URI_TO_FOLLOW="`cat $_LOCAL_FILE`"
-      elif [[ "${URI##*/}" =~ ^rdf && "$FB" == "<?xml" ]]; then
-        #It seems to be an XML. Try to extract the RDF tags (and do not duplicate the entries)
-        URI_TO_FOLLOW=`tr -d '\n' < $_LOCAL_FILE | gawk 'BEGIN{RS=">";p=0}{ if ($1 ~ "<ws:[A-Z]*") { split($2,a,"\""); if (a[1] ~ "^rdf:about") { b=a[2]; sub(/^.*\//,"",b); sub(/\?.*$/,"",b); if (d[b]==0) { d[b]=1; e[p]=a[2]; p++; } } } }END{ for (i=0;i<p;i++) printf e[i]" "; exit p;}'`
-      elif [[ "$FB" == "<!DOC" || "$FB" == "<!doc"  || "$FB" == "<html" || "$FB" == "<HTML"  ]]; then
-        #It seems to be an HTML. Try to extract the RDF tags (and do not duplicate the entries)
-        URI_TO_FOLLOW=`tr -d '\n' < $_LOCAL_FILE | gawk 'BEGIN{RS=">";p=0}{ if ($1" "$2 == "<meta http-equiv=\"refresh\"") { split($3,a,"\""); e[0]="refresh://"a[2]; p=1; exit; } ; if ($1 == "<a") { split($2,a,"\""); if (a[1] == "href=") { b=a[2]; sub(/^.*\//,"",b); sub(/\?.*$/,"",b); if (d[b]==0) { d[b]=1; e[p]=a[2]; p++; } } } }END{ for (i=0;i<p;i++) printf e[i]" "; exit p;}'`
-        if [[ "$URI_TO_FOLLOW" =~ ^refresh:// ]]; then
-          #this is a meta-refresh
-          URI_TO_FOLLOW=${URI_TO_FOLLOW#refresh://}
-          ST=${URI_TO_FOLLOW%%;*}
-          if [[ "$ST" == "$URI_TO_FOLLOW" ]]; then
-            URI_TO_FOLLOW="$URI "
-          else
-	    URI_TO_FOLLOW="${URI_TO_FOLLOW#*;}"
-            URI_TO_FOLLOW="${URI_TO_FOLLOW# }"
-          fi
-          echo "[INFO   ][secp][refresh] got meta-refresh, waiting for $ST seconds" 1>&2
-          sleep $ST
-        fi
-      elif grep -q '<title>EO SSO</title>' $_LOCAL_FILE; then
-        #This seems to be the EO-SSO login page, perform EO-SSO login
-        echo "[INFO   ][secp][auth] EO-SSO login page detected. Logging in and re-downloading the file..." 1>&2
+  # If this is a small file, maybe is an authentication or a file list
+  if [[ ! -d "$_LOCAL_FILE" && ! -h "$_LOCAL_FILE" && "$(stat -c%s "$_LOCAL_FILE")" -lt 102400 ]]; then
+    if grep -q '<title>EO SSO</title>' $_LOCAL_FILE; then
+      #This seems to be the EO-SSO login page, perform EO-SSO login
+      echo "[INFO   ][secp][auth] EO-SSO login page detected. Logging in and re-downloading the file..." 1>&2
 
-	#Check if the page version and other pre-requisites
-	IDP_ADDR="`sed -n -e 's|^[^<]*<a href="\(.*\)/idp/umsso20/admin">Forgot your password?</a>.*$|\1/idp/umsso20/login?null|p' $_LOCAL_FILE`"
-        if [[ $? -ne 0 || -z "$IDP_ADDR" ]] || ! grep -q untilbrowserclose $_LOCAL_FILE || ! grep -q oneday $_LOCAL_FILE; then
-		echo "[ERROR  ][secp][auth] EO-SSO page invalid. Maybe EO-SSO has been upgraded."
-	        eval "$ON_ERROR"
-        fi
-	if [[ $_SESSION_FILE == "/dev/null" || ! -w $_SESSION_FILE ]]; then
-          echo "[ERROR  ][secp][auth] You need to enable session file to perform EO-SSO login."
-          eval "$ON_ERROR"
-	fi
-
-        #Load UM-SSO password (this is mandatory)
-        SSO_SERVER=${IDP_ADDR#*://}; SSO_SERVER=${SSO_SERVER%%:*};
-        loadpass "$SSO_SERVER" true
-	
-	#Try to re-download the file (performing log in...)
-	curl -b $_SESSION_FILE -c $_SESSION_FILE -L -k -f -s -S 'https://eo-sso-idp.eo.esa.int:443/idp/umsso20/login?null' --data "cn=$_SERVER_USERNAME&password=$_SERVER_PASSWORD"'&loginFields=cn@password&loginMethod=umsso&sessionTime=untilbrowserclose&idleTime=oneday' -o $_LOCAL_FILE
-        res=$?
-
-	#Check if you re-get the EO-SSO page
-	if [[ "$res" -ne "0" ]] || [[ "$(stat -c%s "$_LOCAL_FILE")" -lt 10240 && $(grep -c '<title>EO SSO</title>' $_LOCAL_FILE) -eq 1 ]]; then
-	  echo "[ERROR  ][secp][auth] Failed to login into EO-SSO. Please check your authentication credentials."
-          eval "$ON_ERROR"
-	fi
+      #Check if the page version and other pre-requisites
+      IDP_ADDR="`sed -n -e 's|^.*<a href="\(.*\)/idp/umsso20/admin">Forgot your password?</a>.*$|\1/idp/umsso20/login?null|p' $_LOCAL_FILE`"
+      if [[ $? -ne 0 || -z "$IDP_ADDR" ]] || ! grep -q untilbrowserclose $_LOCAL_FILE || ! grep -q oneday $_LOCAL_FILE; then
+        echo "[ERROR  ][secp][auth] EO-SSO page invalid. Maybe EO-SSO has been upgraded." 1>&2
+        eval "$ON_ERROR"
       fi
+      if [[ $_SESSION_FILE == "/dev/null" || ! -w $_SESSION_FILE ]]; then
+        echo "[ERROR  ][secp][auth] You need to enable session file to perform EO-SSO login." 1>&2
+        eval "$ON_ERROR"
+      fi
+
+      #Load UM-SSO password (this is mandatory)
+      SSO_SERVER=${IDP_ADDR#*://}; SSO_SERVER=${SSO_SERVER%%:*};
+      loadpass "$SSO_SERVER" true
+
+      #Try to re-download the file (performing log in...)
+      curl -b $_SESSION_FILE -c $_SESSION_FILE -L -k -f -s -S "$IDP_ADDR" --data "cn=$_SERVER_USERNAME&password=$_SERVER_PASSWORD"'&loginFields=cn@password&loginMethod=umsso&sessionTime=untilbrowserclose&idleTime=oneday' -o $_LOCAL_FILE
+      res=$?
+
+      #Check if you re-get the EO-SSO page
+      if [[ "$res" -ne "0" ]] || [[ "$(stat -c%s "$_LOCAL_FILE")" -lt 10240 && $(grep -c '<title>EO SSO</title>' $_LOCAL_FILE) -eq 1 ]]; then
+        echo "[ERROR  ][secp][auth] Failed to login into EO-SSO. Please check your authentication credentials." 1>&2
+        eval "$ON_ERROR"
+      fi
+    elif grep -q 'login.php?rediurl=' $_LOCAL_FILE; then
+      #This seems to be an internal EO data gateway login page, perform EO Data Gateway internal login
+      echo "[INFO   ][secp][auth] EO Data Gateway login page detected. Logging in and re-downloading the file..." 1>&2
+
+      #Extract login page address
+      LOGIN_PAGE="`sed -n -e 's|.* href="\(.*login.php[^"]*\)".*|\1|' -e 's|login.php|login.php|p' $_LOCAL_FILE`"
+      if [[ $? -ne 0 || -z "$LOGIN_PAGE" ]]; then
+        echo "[ERROR  ][secp][auth] EO Data Gateway login redirect page invalid. This version is unsupported." 1>&2
+        eval "$ON_ERROR"
+      fi
+      if [[ ${LOGIN_PAGE:0:1} == "/" ]]; then
+        #Absolute address
+        CRED_INDEX="${URI#*://}"; CRED_INDEX="${CRED_INDEX%%/*}"
+        LOGIN_PAGE="${URI%%://*}://$CRED_INDEX$LOGIN_PAGE"
+      else
+        #relative address
+        LOGIN_PAGE="${URI%/*}/$LOGIN_PAGE"
+      fi
+
+      #Read login page and extract relevant parameters
+      curl -b $_SESSION_FILE -c $_SESSION_FILE -L -k -f -s -S "$LOGIN_PAGE" -o $_LOCAL_FILE
+      res=$?
+      if [[ "$res" -ne "0" ]] || ! grep -q 'login.js"' $_LOCAL_FILE; then
+        echo "[ERROR  ][secp][auth] Failed to login into EO Data Gateway. Invalid login page supplied." 1>&2
+        eval "$ON_ERROR"
+      fi
+      logintoken="`sed -n 's|.*onSubmit="UserLogin('"'"'\([^'"'"']*\)'"'"');\".*|\1|p' $_LOCAL_FILE`"
+      if [[ $? -ne 0 || -z "$logintoken" ]]; then
+        echo "[ERROR  ][secp][auth] EO Data Gateway login token not found. This version is unsupported." 1>&2
+        eval "$ON_ERROR"
+      fi
+
+      #Perform login an try to redownload the file
+      CRED_INDEX="${URI#*://}"; CRED_INDEX="${CRED_INDEX%%/*}"
+      loadpass "$CRED_INDEX" true
+      _SERVER_PASSWORD="`echo -n "$_SERVER_PASSWORD" | sha256sum | cut -d ' ' -f 1`"
+      _SERVER_PASSWORD="`echo -n "$logintoken$_SERVER_PASSWORD" | sha256sum | cut -d ' ' -f 1`"
+      curl -b $_SESSION_FILE -c $_SESSION_FILE -L -k -f -s -S "$LOGIN_PAGE" --data "username=$_SERVER_USERNAME&password=$_SERVER_PASSWORD" -o $_LOCAL_FILE
+      res=$?
+
+      #Check if you re-get the login page
+      if [[ "$res" -ne "0" ]] || [[ "$(stat -c%s "$_LOCAL_FILE")" -lt 10240 && $(grep -c 'login.php?rediurl=' $_LOCAL_FILE) -gt 0 ]]; then
+        echo "[ERROR  ][secp][auth] Failed to login into EO Data Gateway. Please check your authentication credentials." 1>&2
+        eval "$ON_ERROR"
+      fi
+
+    elif $_FOLLOW_HTML; then
+      #Check if this is a file list
+      parseurllist "$URI" "$_LOCAL_FILE"
+
       #Add the URI_TO_FOLLOW to the URI list
       if [[ -n "$URI_TO_FOLLOW" ]]; then
         echo "[INFO   ][secp][success] got URIs '$URI_TO_FOLLOW'" 1>&2
