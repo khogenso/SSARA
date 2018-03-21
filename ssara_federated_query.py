@@ -135,6 +135,7 @@ Usage Examples:
     resultsgroup.add_option('--monthMax', action="store", dest="monMax",type="int", default=12, metavar='<ARG>', help='maximum integer month')
     resultsgroup.add_option('--noswath', action="store_true", default=False, help='Enforce first_frame==final_frame (i.e. not a swath)')
     resultsgroup.add_option('--dem', action="store_true", default=False, help='OT call for DEM')
+    resultsgroup.add_option('--asfResponseTimeout', action="store", dest="asfResponseTimeout", type="int", metavar='<ARG>', help='Set the timeout length for ASF API response (SSARA server defaults to 15 sec.)')
     parser.add_option_group(resultsgroup) 
     opts, remainder = parser.parse_args(argv)
     opt_dict= vars(opts)
@@ -164,6 +165,7 @@ Usage Examples:
     if opt_dict['maxFaradayRotation']: query_dict['maxFaradayRotation'] = opt_dict['maxFaradayRotation']
     if opt_dict['minInsarStackSize']: query_dict['minInsarStackSize'] = opt_dict['minInsarStackSize']
     if opt_dict['maxInsarStackSize']: query_dict['maxInsarStackSize'] = opt_dict['maxInsarStackSize']
+    if opt_dict['asfResponseTimeout']: query_dict['asfResponseTimeout'] = opt_dict['asfResponseTimeout']
 
 
     ### QUERY THE APIs AND GET THE JSON RESULTS ###
