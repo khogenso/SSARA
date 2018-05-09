@@ -53,6 +53,7 @@ except ImportError:
     from urllib2 import urlopen,HTTPCookieProcessor,HTTPPasswordMgrWithDefaultRealm,HTTPBasicAuthHandler,HTTPDigestAuthHandler,build_opener,install_opener,HTTPError
     from urllib import urlencode
     from Queue import Queue
+import ssl
 
 import password_config
 
@@ -136,6 +137,7 @@ Usage Examples:
     resultsgroup.add_option('--noswath', action="store_true", default=False, help='Enforce first_frame==final_frame (i.e. not a swath)')
     resultsgroup.add_option('--dem', action="store_true", default=False, help='OT call for DEM')
     resultsgroup.add_option('--asfResponseTimeout', action="store", dest="asfResponseTimeout", type="int", metavar='<ARG>', help='Set the timeout length for ASF API response (SSARA server defaults to 15 sec.)')
+    resultsgroup.add_option('--s1orbits', action="store_true", default=False, help="Download S1 orbits from ESA for the result set")
     parser.add_option_group(resultsgroup) 
     opts, remainder = parser.parse_args(argv)
     opt_dict= vars(opts)
@@ -279,6 +281,57 @@ Usage Examples:
             queue.put([d, opt_dict])
         #wait on the queue until everything has been processed     
         queue.join()
+    ### Sentinel-1 Orbit Data Download ###
+    if opt_dict['s1orbits']:
+        print("Downloading S1 orbit data, %d at a time" % opt_dict['parallel'])
+        #create a queue for parallel downloading
+        queue = Queue()
+        #spawn a pool of threads, and pass them queue instance
+        for i in range(opt_dict['parallel']):
+            t = s1OrbitDownload(queue)
+            t.setDaemon(True)
+            t.start()
+        #populate queue with data
+        for scene in scenes:
+            queue.put([scene, opt_dict])
+        #wait on the queue until everything has been processed
+        queue.join()
+
+class s1OrbitDownload(threading.Thread):
+    """Threaded S1 orbit download"""
+    def __init__(self, queue):
+        threading.Thread.__init__(self)
+        self.queue = queue
+
+    def run(self):
+        while True:
+            scene, opt_dict = self.queue.get()
+            scene_center_time = datetime.datetime.strptime(scene['startTime'],"%Y-%m-%d %H:%M:%S")
+            sat = os.path.basename(scene['downloadUrl']).split("_")[0]
+            validity_start_time = scene_center_time-datetime.timedelta(days=1)
+            orb_type = 'aux_poeorb'
+            if (datetime.datetime.now()-scene_center_time).days < 21:
+                orb_type = 'aux_resorb'
+                validity_start_time = scene_center_time-datetime.timedelta(hours=10)
+            ##### FIND THE CORRECT ORBIT FILE #####
+            BASE_URL = 'https://qc.sentinel1.eo.esa.int/%s/?validity_start_time=%s' % (orb_type, validity_start_time.strftime("%Y-%m-%d"))
+            for i in re.findall('''href=["'](.[^"']+)["']''', urlopen(BASE_URL, context=ssl.SSLContext(ssl.PROTOCOL_TLSv1)).read().decode('utf-8'), re.I):
+                if '.EOF' in i and sat in i:
+                    orbit_file_url = "%s%s" % (BASE_URL.split("?")[0], i)
+                    orbit_file = os.path.basename(orbit_file_url)
+                    orb_file_dates = os.path.splitext(orbit_file)[0].split('_V')[1].split("_")
+                    orb_start = datetime.datetime.strptime(orb_file_dates[0], "%Y%m%dT%H%M%S")
+                    orb_stop = datetime.datetime.strptime(orb_file_dates[1], "%Y%m%dT%H%M%S")
+                    if os.path.exists(orbit_file):
+                        print("Already downloaded %s" % orbit_file_url)
+                    elif not os.path.exists(orbit_file) and (orb_start < scene_center_time) and (orb_stop > scene_center_time):
+                        cmd = "wget --no-check-certificate -c %s" % orbit_file_url
+                        print(cmd)
+                        pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.STDOUT).stdout
+                        pipe.read()
+                    else:
+                        print("No match %s" % orbit_file_url)
+            self.queue.task_done()
         
 def asf_dl(d, opt_dict):
     user_name = password_config.asfuser
