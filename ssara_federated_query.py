@@ -132,8 +132,8 @@ Usage Examples:
 #    resultsgroup.add_option('--asfpass', action="store", dest="asfpass", type="str", metavar='<ARG>', help='ASF Archive password')
 #    resultsgroup.add_option('--ssuser', action="store", dest="ssuser", type="str", metavar='<ARG>', help='Supersites username')
 #    resultsgroup.add_option('--sspass', action="store", dest="sspass", type="str", metavar='<ARG>', help='Supersites password')
-    resultsgroup.add_option('--monthMin', action="store", dest="monMin",type="int", default=1, metavar='<ARG>', help='minimum integer month')
-    resultsgroup.add_option('--monthMax', action="store", dest="monMax",type="int", default=12, metavar='<ARG>', help='maximum integer month')
+    resultsgroup.add_option('--monthMin', action="store", dest="monMin",type="int", metavar='<ARG>', help='minimum integer month')
+    resultsgroup.add_option('--monthMax', action="store", dest="monMax",type="int", metavar='<ARG>', help='maximum integer month')
     resultsgroup.add_option('--noswath', action="store_true", default=False, help='Enforce first_frame==final_frame (i.e. not a swath)')
     resultsgroup.add_option('--dem', action="store_true", default=False, help='OT call for DEM')
     resultsgroup.add_option('--asfResponseTimeout', action="store", dest="asfResponseTimeout", type="int", metavar='<ARG>', help='Set the timeout length for ASF API response (SSARA server defaults to 15 sec.)')
@@ -190,10 +190,16 @@ Usage Examples:
     ### ORDER THE SCENES BY STARTTIME, NEWEST FIRST ###
     scenes = sorted(scenes, key=operator.itemgetter('startTime'), reverse=True)
     print("Found %d scenes" % len(scenes))
-    scenes = [r for r in sorted(scenes, key=operator.itemgetter('startTime')) 
+    if opt_dict['monMin'] or opt_dict['monMax']:
+        try:
+            scenes = [r for r in sorted(scenes, key=operator.itemgetter('startTime')) 
                      if datetime.datetime.strptime(r['startTime'],"%Y-%m-%d %H:%M:%S").month >= opt_dict['monMin'] 
                      and datetime.datetime.strptime(r['startTime'],"%Y-%m-%d %H:%M:%S").month <= opt_dict['monMax'] ]
-    print("Scenes after filtering for monthMin %d and monthMax %d: %d" % (opt_dict['monMin'],opt_dict['monMax'],len(scenes)))
+        except:
+            scenes = [r for r in sorted(scenes, key=operator.itemgetter('startTime'))
+                     if datetime.datetime.strptime(r['startTime'],"%Y-%m-%dT%H:%M:%S.%f").month >= opt_dict['monMin']
+                     and datetime.datetime.strptime(r['startTime'],"%Y-%m-%dT%H:%M:%S.%f").month <= opt_dict['monMax'] ]
+        print("Scenes after filtering for monthMin %d and monthMax %d: %d" % (opt_dict['monMin'],opt_dict['monMax'],len(scenes)))
     if opt_dict['noswath']:
         scenes = [ r for r in sorted(scenes) if r['firstFrame']==r['finalFrame'] ]
         print("Scenes after filtering out swaths: %d" % len(scenes))
@@ -334,41 +340,16 @@ class s1OrbitDownload(threading.Thread):
             self.queue.task_done()
         
 def asf_dl(d, opt_dict):
-    user_name = password_config.asfuser
-    user_password = password_config.asfpass
-    cookie_handler = HTTPCookieProcessor()
-    pm = HTTPPasswordMgrWithDefaultRealm()
-    pm.add_password(None, 'urs.earthdata.nasa.gov', user_name, user_password)
-    auth_handler = HTTPBasicAuthHandler(pm)
-    opener = build_opener(cookie_handler, auth_handler)
-    install_opener(opener)
     url = d['downloadUrl']
     filename = os.path.basename(url)
     print("ASF Download:",filename)
     start = time.time()
-    try:
-        f = urlopen(url)
-    except HTTPError as e:
-        print(e)
-        return
-    dl_file_size = int(f.info()['Content-Length'])
-    if os.path.exists(filename):
-        file_size = os.path.getsize(filename)
-        if dl_file_size == file_size:
-            print("%s already downloaded" % filename)
-            f.close()
-            return
-    start = time.time()
-    CHUNK = 256 * 10240
-    with open(filename, 'wb') as fp:
-        while True:
-            chunk = f.read(CHUNK)
-            if not chunk: break
-            fp.write(chunk)
+    cmd = 'wget -nv -c --user=%s --password=%s %s' % (password_config.asfuser,password_config.asfpass,url)
+    pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.STDOUT).stdout
+    pipe.read()
     total_time = time.time() - start
     mb_sec = (os.path.getsize(filename) / (1024 * 1024.0)) / total_time
     print("%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec))
-    f.close()
         
 def unavco_dl(d, opt_dict):
     user_name = password_config.unavuser
