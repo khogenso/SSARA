@@ -220,8 +220,8 @@ Usage Examples:
     if not opt_dict['kml'] and not opt_dict['download'] and not opt_dict['print']:
         print("You did not specify the --kml, --print, or --download option, so there really is nothing else I can do for you now")
     if opt_dict['print']:
-        print('wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west))
-        print('gdal_translate -of GMT -projwin %f %f %f %f /vsicurl/https://cloud.sdsc.edu/v1/AUTH_opentopography/Raster/SRTM_GL1_Ellip/SRTM_GL1_Ellip_srtm.vrt dem.grd' % (west,north,east,south))
+        print('wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1_E"' % (north,south,east,west))
+        print('gdal_translate -of GMT -ot Int16 -projwin %f %f %f %f /vsicurl/https://cloud.sdsc.edu/v1/AUTH_opentopography/Raster/SRTM_GL1_Ellip/SRTM_GL1_Ellip_srtm.vrt dem.grd' % (west,north,east,south))
         for r in sorted(scenes, key=operator.itemgetter('startTime')):
             print(",".join(str(x) for x in [r['collectionName'], r['platform'], r['absoluteOrbit'], r['startTime'], r['stopTime'], r['relativeOrbit'], r['firstFrame'], r['finalFrame'], r['beamMode'], r['beamSwath'], r['flightDirection'], r['lookDirection'],r['polarization'], r['downloadUrl']]))
     ### MAKE THE CSV FILE ###
@@ -252,7 +252,7 @@ Usage Examples:
     if opt_dict['dem']:
 #        print('wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west))
         print("Downloading DEM")
-        os.system('gdal_translate -of GMT -projwin %f %f %f %f /vsicurl/https://cloud.sdsc.edu/v1/AUTH_opentopography/Raster/SRTM_GL1_Ellip/SRTM_GL1_Ellip_srtm.vrt dem.grd' % (west,north,east,south))
+        os.system('gdal_translate -of GMT -ot Int16 -projwin %f %f %f %f /vsicurl/https://cloud.sdsc.edu/v1/AUTH_opentopography/Raster/SRTM_GL1_Ellip/SRTM_GL1_Ellip_srtm.vrt dem.grd' % (west,north,east,south))
     if opt_dict['download']:
         allGood = True
         for collection in list(set([d['collectionName'] for d in scenes])):
