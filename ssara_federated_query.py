@@ -204,25 +204,24 @@ Usage Examples:
         scenes = [ r for r in sorted(scenes) if r['firstFrame']==r['finalFrame'] ]
         print("Scenes after filtering out swaths: %d" % len(scenes))
 
-    if opt_dict['dem']:
-        lats = []
-        lons = []
-        for scene in scenes:
-            fp = re.findall(r"[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", scene['stringFootprint'])
-            for t in map(lambda i: float(fp[i]), filter(lambda i: i % 2 == 1, range(len(fp)))):
-                lats.append(t)
-            for t in map(lambda i: float(fp[i]), filter(lambda i: i % 2 == 0, range(len(fp)))):
-                lons.append(t)
-        north = max(lats)+0.15
-        south = min(lats)-0.15
-        east = max(lons)+0.15
-        west = min(lons)-0.15
-        print('wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west))
-        print('gdal_translate -of GMT -projwin %f %f %f %f /vsicurl/https://cloud.sdsc.edu/v1/AUTH_opentopography/Raster/SRTM_GL1_Ellip/SRTM_GL1_Ellip_srtm.vrt dem.grd' % (west,north,east,south))
+    lats = []
+    lons = []
+    for scene in scenes:
+        fp = re.findall(r"[+-]? *(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?", scene['stringFootprint'])
+        for t in map(lambda i: float(fp[i]), filter(lambda i: i % 2 == 1, range(len(fp)))):
+            lats.append(t)
+        for t in map(lambda i: float(fp[i]), filter(lambda i: i % 2 == 0, range(len(fp)))):
+            lons.append(t)
+    north = max(lats)+0.15
+    south = min(lats)-0.15
+    east = max(lons)+0.15
+    west = min(lons)-0.15
 
     if not opt_dict['kml'] and not opt_dict['download'] and not opt_dict['print']:
         print("You did not specify the --kml, --print, or --download option, so there really is nothing else I can do for you now")
     if opt_dict['print']:
+        print('wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west))
+        print('gdal_translate -of GMT -projwin %f %f %f %f /vsicurl/https://cloud.sdsc.edu/v1/AUTH_opentopography/Raster/SRTM_GL1_Ellip/SRTM_GL1_Ellip_srtm.vrt dem.grd' % (west,north,east,south))
         for r in sorted(scenes, key=operator.itemgetter('startTime')):
             print(",".join(str(x) for x in [r['collectionName'], r['platform'], r['absoluteOrbit'], r['startTime'], r['stopTime'], r['relativeOrbit'], r['firstFrame'], r['finalFrame'], r['beamMode'], r['beamSwath'], r['flightDirection'], r['lookDirection'],r['polarization'], r['downloadUrl']]))
     ### MAKE THE CSV FILE ###
@@ -250,6 +249,10 @@ Usage Examples:
         f.write(r.read())
         f.close() 
     ### DOWNLOAD THE DATA FROM THE QUERY RESULTS ### 
+    if opt_dict['dem']:
+#        print('wget -O dem.tif "http://ot-data1.sdsc.edu:9090/otr/getdem?north=%f&south=%f&east=%f&west=%f&demtype=SRTMGL1"' % (north,south,east,west))
+        print("Downloading DEM")
+        os.system('gdal_translate -of GMT -projwin %f %f %f %f /vsicurl/https://cloud.sdsc.edu/v1/AUTH_opentopography/Raster/SRTM_GL1_Ellip/SRTM_GL1_Ellip_srtm.vrt dem.grd' % (west,north,east,south))
     if opt_dict['download']:
         allGood = True
         for collection in list(set([d['collectionName'] for d in scenes])):
