@@ -323,7 +323,7 @@ class s1OrbitDownload(threading.Thread):
                 orb_type = 'aux_resorb'
                 validity_start_time = scene_center_time-datetime.timedelta(hours=10)
             ##### FIND THE CORRECT ORBIT FILE #####
-            BASE_URL = 'https://qc.sentinel1.eo.esa.int/%s/?validity_start_time=%s' % (orb_type, validity_start_time.strftime("%Y-%m-%d"))
+            BASE_URL = 'https://qc.sentinel1.eo.esa.int/%s/?validity_start=%s' % (orb_type, validity_start_time.strftime("%Y-%m-%d"))
             for i in re.findall('''href=["'](.[^"']+)["']''', urlopen(BASE_URL, context=ssl.SSLContext(ssl.PROTOCOL_TLSv1)).read().decode('utf-8'), re.I):
                 if '.EOF' in i and sat in i:
                     orbit_file_url = i
