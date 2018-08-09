@@ -315,7 +315,7 @@ class s1OrbitDownload(threading.Thread):
     def run(self):
         while True:
             scene, opt_dict = self.queue.get()
-            scene_center_time = datetime.datetime.strptime(scene['startTime'],"%Y-%m-%d %H:%M:%S")
+            scene_center_time = datetime.datetime.strptime(scene['startTime'],"%Y-%m-%dT%H:%M:%S.%f")
             sat = os.path.basename(scene['downloadUrl']).split("_")[0]
             validity_start_time = scene_center_time-datetime.timedelta(days=1)
             orb_type = 'aux_poeorb'
@@ -326,7 +326,7 @@ class s1OrbitDownload(threading.Thread):
             BASE_URL = 'https://qc.sentinel1.eo.esa.int/%s/?validity_start_time=%s' % (orb_type, validity_start_time.strftime("%Y-%m-%d"))
             for i in re.findall('''href=["'](.[^"']+)["']''', urlopen(BASE_URL, context=ssl.SSLContext(ssl.PROTOCOL_TLSv1)).read().decode('utf-8'), re.I):
                 if '.EOF' in i and sat in i:
-                    orbit_file_url = "%s%s" % (BASE_URL.split("?")[0], i)
+                    orbit_file_url = i
                     orbit_file = os.path.basename(orbit_file_url)
                     orb_file_dates = os.path.splitext(orbit_file)[0].split('_V')[1].split("_")
                     orb_start = datetime.datetime.strptime(orb_file_dates[0], "%Y%m%dT%H%M%S")
@@ -338,8 +338,6 @@ class s1OrbitDownload(threading.Thread):
                         print(cmd)
                         pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.STDOUT).stdout
                         pipe.read()
-                    else:
-                        print("No match %s" % orbit_file_url)
             self.queue.task_done()
         
 def asf_dl(d, opt_dict):
