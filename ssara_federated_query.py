@@ -172,7 +172,7 @@ Usage Examples:
 
     ### QUERY THE APIs AND GET THE JSON RESULTS ###
     params = urlencode(query_dict)
-    ssara_url = "http://web-services.unavco.org/brokered/ssara/api/sar/search?%s" % params
+    ssara_url = "https://web-services.unavco.org/brokered/ssara/api/sar/search?%s" % params
     print("Running SSARA API Query")
     t = time.time()
     f = urlopen(ssara_url)
@@ -237,7 +237,7 @@ Usage Examples:
 #                CSV.write(",".join(str(x) for x in [r['collectionName'], r['platform'], r['absoluteOrbit'], r['startTime'], r['stopTime'], r['relativeOrbit'], r['firstFrame'], r['finalFrame'], r['beamMode'], r['beamSwath'], r['flightDirection'], r['lookDirection'],r['polarization'], r['downloadUrl']])+"\n")
     ### GET A KML FILE, THE FEDERATED API HAS THIS OPTION ALREADY, SO MAKE THE SAME CALL AGAIN WITH output=kml OPTION ###
     if opt_dict['kml']:
-        ssara_url = "http://web-services.unavco.org/brokered/ssara/api/sar/search?output=kml&%s" % params
+        ssara_url = "https://web-services.unavco.org/brokered/ssara/api/sar/search?output=kml&%s" % params
         print("Getting KML")
         t = time.time()
         r = urlopen(ssara_url)
@@ -324,7 +324,7 @@ class s1OrbitDownload(threading.Thread):
                 validity_start_time = scene_center_time-datetime.timedelta(hours=10)
             ##### FIND THE CORRECT ORBIT FILE #####
             BASE_URL = 'https://qc.sentinel1.eo.esa.int/%s/?validity_start=%s' % (orb_type, validity_start_time.strftime("%Y-%m-%d"))
-            for i in re.findall('''href=["'](.[^"']+)["']''', urlopen(BASE_URL, context=ssl.SSLContext(ssl.PROTOCOL_TLSv1)).read().decode('utf-8'), re.I):
+            for i in re.findall('''href=["'](.[^"']+)["']''', urlopen(BASE_URL).read().decode('utf-8'), re.I):
                 if '.EOF' in i and sat in i:
                     orbit_file_url = i
                     orbit_file = os.path.basename(orbit_file_url)
