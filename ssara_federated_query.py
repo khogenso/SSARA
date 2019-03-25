@@ -346,12 +346,40 @@ def asf_dl(d, opt_dict):
     print("ASF Download:",filename)
     start = time.time()
     cmd = 'wget -nv -c --user=%s --password=%s %s' % (password_config.asfuser,password_config.asfpass,url)
-    pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.STDOUT).stdout
-    pipe.read()
-    total_time = time.time() - start
-    mb_sec = (os.path.getsize(filename) / (1024 * 1024.0)) / total_time
-    print("%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec))
-        
+
+    ok = False
+    tries = 0
+    while tries < 5:
+        if tries > 0:
+            print("ASF Download (retry %d): %s" % (tries,filename))
+        pipe = sub.Popen(cmd, shell=True, stdout=sub.PIPE, stderr=sub.STDOUT).stdout
+        pipe.read()
+        if asf_dl_ok(filename):
+            ok = True
+            break
+        else:
+            tries += 1
+            if os.path.isfile(filename):
+                os.remove(filename)
+                #os.rename(filename, filename+".err"+str(tries))
+                
+
+    if ok:
+        total_time = time.time() - start
+        mb_sec = (os.path.getsize(filename) / (1024 * 1024.0)) / total_time
+        print("%s download time: %.2f secs (%.2f MB/sec)" % (filename, total_time, mb_sec))
+    else:
+        print("Download failed: %s" % filename)
+
+def asf_dl_ok(filename):
+    try:
+        import zipfile
+        z = zipfile.ZipFile(filename)
+        ret = z.testzip()
+        return ret is None
+    except:
+        return False
+
 def unavco_dl(d, opt_dict):
     user_name = password_config.unavuser
     user_password = password_config.unavpass
